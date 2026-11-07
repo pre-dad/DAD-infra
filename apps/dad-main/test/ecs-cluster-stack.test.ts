@@ -20,6 +20,15 @@ describe('EcsClusterStack', () => {
     t.resourceCountIs('AWS::ServiceDiscovery::PrivateDnsNamespace', 1);
   });
 
+  it('turns Container Insights on in production and off in staging', () => {
+    const setting = (env: 'staging' | 'production') =>
+      Object.values(
+        Template.fromStack(buildGraph(env).ecsCluster).findResources('AWS::ECS::Cluster'),
+      )[0].Properties.ClusterSettings;
+    expect(setting('production')).toEqual([{ Name: 'containerInsights', Value: 'enabled' }]);
+    expect(setting('staging')).toEqual([{ Name: 'containerInsights', Value: 'disabled' }]);
+  });
+
   it('sets log-group retention from config (staging 30 days)', () => {
     const t = Template.fromStack(buildGraph('staging').ecsCluster);
     // 9 service log groups, each with 30-day retention.
