@@ -30,6 +30,16 @@ export interface TaskSize {
   readonly memoryMiB: number;
 }
 
+/** RDS instance sizing. */
+export interface DatabaseSizing {
+  /** EC2-style instance type without the `db.` prefix (e.g. `t3.large`, `t4g.small`). */
+  readonly instanceType: string;
+  /** Initial storage in GiB. */
+  readonly allocatedStorageGiB: number;
+  /** Storage autoscaling ceiling in GiB. */
+  readonly maxAllocatedStorageGiB: number;
+}
+
 /** Desired running task counts for the long-running services. */
 export interface DesiredCounts {
   readonly api: number;
@@ -101,6 +111,15 @@ export interface EnvConfig extends SharedEnvConfig {
   readonly desiredCounts: DesiredCounts;
   /** Fargate task sizes per service tier. */
   readonly taskSizes: TaskSizes;
+  /** RDS instance class and storage. */
+  readonly database: DatabaseSizing;
+  /**
+   * Whether ECS Container Insights is on. The service-health alarms read the
+   * `ECS/ContainerInsights` namespace, so they exist only while this is true.
+   */
+  readonly containerInsights: boolean;
+  /** Which VPC traffic the flow logs record. */
+  readonly flowLogTrafficType: 'ALL' | 'REJECT';
   /** Target-tracking autoscaling for api, web and nginx. */
   readonly autoscaling: AutoscalingConfig;
   /**
@@ -148,7 +167,7 @@ function toOrigin(host: string): string {
  * service later without changing the shape of the config.
  */
 const STAGING_TASK_SIZES: TaskSizes = {
-  api: { cpu: 512, memoryMiB: 1024 },
+  api: { cpu: 256, memoryMiB: 512 },
   web: { cpu: 512, memoryMiB: 1024 },
   nginx: { cpu: 256, memoryMiB: 512 },
   worker: { cpu: 256, memoryMiB: 512 },
@@ -159,6 +178,19 @@ const PRODUCTION_TASK_SIZES: TaskSizes = {
   web: { cpu: 1024, memoryMiB: 2048 },
   nginx: { cpu: 512, memoryMiB: 1024 },
   worker: { cpu: 512, memoryMiB: 1024 },
+};
+
+/** Sized for a handful of testers on a single AZ. */
+const STAGING_DATABASE: DatabaseSizing = {
+  instanceType: 't4g.small',
+  allocatedStorageGiB: 20,
+  maxAllocatedStorageGiB: 200,
+};
+
+const PRODUCTION_DATABASE: DatabaseSizing = {
+  instanceType: 't3.large',
+  allocatedStorageGiB: 50,
+  maxAllocatedStorageGiB: 200,
 };
 
 const STAGING_AUTOSCALING: AutoscalingConfig = {
@@ -186,6 +218,9 @@ const STAGING: AppFields = {
   logRetentionDays: 30,
   desiredCounts: { api: 1, web: 1, nginx: 1, workers: 1 },
   taskSizes: STAGING_TASK_SIZES,
+  database: STAGING_DATABASE,
+  containerInsights: false,
+  flowLogTrafficType: 'REJECT',
   autoscaling: STAGING_AUTOSCALING,
   interfaceEndpointsEnabled: false,
   flowLogRetentionDays: 30,
@@ -207,6 +242,9 @@ const PRODUCTION: AppFields = {
   logRetentionDays: 365,
   desiredCounts: { api: 2, web: 2, nginx: 2, workers: 1 },
   taskSizes: PRODUCTION_TASK_SIZES,
+  database: PRODUCTION_DATABASE,
+  containerInsights: true,
+  flowLogTrafficType: 'ALL',
   autoscaling: PRODUCTION_AUTOSCALING,
   interfaceEndpointsEnabled: true,
   flowLogRetentionDays: 365,

@@ -242,8 +242,8 @@ export class NetworkStack extends cdk.Stack {
     }
 
     // --- VPC flow logs --------------------------------------------------
-    // All traffic (accepted and rejected) to CloudWatch Logs with the configured
-    // retention.
+    // Accepted and rejected traffic (rejected only where config.flowLogTrafficType says
+    // so) to CloudWatch Logs with the configured retention.
     this.flowLogGroup = new logs.LogGroup(this, 'FlowLogs', {
       logGroupName: `/dad/${config.env}/vpc-flow-logs`,
       retention: toRetentionDays(config.flowLogRetentionDays),
@@ -253,7 +253,7 @@ export class NetworkStack extends cdk.Stack {
     });
     this.vpc.addFlowLog('FlowLog', {
       destination: ec2.FlowLogDestination.toCloudWatchLogs(this.flowLogGroup),
-      trafficType: ec2.FlowLogTrafficType.ALL,
+      trafficType: ec2.FlowLogTrafficType[config.flowLogTrafficType],
     });
 
     // --- Outputs --------------------------------------------------------

@@ -102,7 +102,9 @@ export class EcsClusterStack extends cdk.Stack {
     this.cluster = new ecs.Cluster(this, 'Cluster', {
       vpc,
       clusterName: clusterNameFor(config.env),
-      containerInsightsV2: ecs.ContainerInsights.ENABLED,
+      containerInsightsV2: config.containerInsights
+        ? ecs.ContainerInsights.ENABLED
+        : ecs.ContainerInsights.DISABLED,
       defaultCloudMapNamespace: {
         name: this.namespaceName,
         useForServiceConnect: true,

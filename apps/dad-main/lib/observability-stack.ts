@@ -57,9 +57,12 @@ export class ObservabilityStack extends cdk.Stack {
     const action = new cwActions.SnsAction(this.topic);
 
     // --- ECS service health: running < desired --------------------------
-    for (const [name, service] of Object.entries(services) as Array<
-      [ServiceName, ecs.FargateService]
-    >) {
+    // RunningTaskCount is a Container Insights metric: without it the alarms would sit
+    // in ALARM on missing data, so they exist only while Container Insights is on.
+    const monitoredServices = config.containerInsights
+      ? (Object.entries(services) as Array<[ServiceName, ecs.FargateService]>)
+      : [];
+    for (const [name, service] of monitoredServices) {
       const running = new cloudwatch.Metric({
         namespace: 'ECS/ContainerInsights',
         metricName: 'RunningTaskCount',

@@ -72,6 +72,24 @@ describe('getConfig', () => {
     );
   });
 
+  it('sizes staging for a few testers and leaves production unchanged', () => {
+    const staging = getConfig('staging');
+    expect(staging.database).toEqual({
+      instanceType: 't4g.small',
+      allocatedStorageGiB: 20,
+      maxAllocatedStorageGiB: 200,
+    });
+    expect(staging.taskSizes.api).toEqual({ cpu: 256, memoryMiB: 512 });
+    expect(staging.containerInsights).toBe(false);
+    expect(staging.flowLogTrafficType).toBe('REJECT');
+
+    const prod = getConfig('production');
+    expect(prod.database.instanceType).toBe('t3.large');
+    expect(prod.taskSizes.api).toEqual({ cpu: 1024, memoryMiB: 2048 });
+    expect(prod.containerInsights).toBe(true);
+    expect(prod.flowLogTrafficType).toBe('ALL');
+  });
+
   it('keeps the interface endpoints off in staging and on in production', () => {
     expect(getConfig('staging').interfaceEndpointsEnabled).toBe(false);
     expect(getConfig('production').interfaceEndpointsEnabled).toBe(true);

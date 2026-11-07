@@ -145,13 +145,13 @@ describe('NetworkStack', () => {
 
   describe('VPC flow logs', () => {
     it.each([
-      ['staging', 30],
-      ['production', 365],
-    ] as const)('%s: logs all traffic to CloudWatch with %i days of retention', (env, days) => {
+      ['staging', 30, 'REJECT'],
+      ['production', 365, 'ALL'],
+    ] as const)('%s: logs %i days of retention, %s traffic to CloudWatch', (env, days, traffic) => {
       const t = synth(env);
       t.hasResourceProperties('AWS::EC2::FlowLog', {
         ResourceType: 'VPC',
-        TrafficType: 'ALL',
+        TrafficType: traffic,
         LogDestinationType: 'cloud-watch-logs',
       });
       t.hasResourceProperties('AWS::Logs::LogGroup', {

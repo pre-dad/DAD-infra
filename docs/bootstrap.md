@@ -50,7 +50,7 @@ deploy:
 ```sh
 TAG=$(git rev-parse HEAD)
 REGISTRY=<account-id>.dkr.ecr.us-east-2.amazonaws.com
-aws ecr get-login-password | docker login --username AWS --password-stdin "$REGISTRY"
+aws ecr get-login-password --region us-east-2 | docker login --username AWS --password-stdin "$REGISTRY"
 docker build -t "$REGISTRY/dad/api:$TAG" -f apps/donor-api/Dockerfile apps/donor-api
 docker build -t "$REGISTRY/dad/web:$TAG" \
   --build-arg DONOR_PUBLIC_ORIGIN=<public origin> \
