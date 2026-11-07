@@ -40,13 +40,16 @@ capacity.
 | | staging | production |
 |---|---|---|
 | Availability zones | 2 subnets per tier, 1 NAT gateway | 2 subnets per tier, 2 NAT gateways |
-| Database | RDS PostgreSQL 16, `db.t3.medium`, single-AZ, 7-day backups | `db.t3.large`, Multi-AZ, 14-day backups |
-| Storage | 50 GiB gp3, autoscaling to 200 GiB | same |
-| api / web task | 0.5 vCPU, 1 GiB | 1 vCPU, 2 GiB |
+| Database | RDS PostgreSQL 16, `db.t4g.small`, single-AZ, 7-day backups | `db.t3.large`, Multi-AZ, 14-day backups |
+| Storage | 20 GiB gp3, autoscaling to 200 GiB | 50 GiB gp3, autoscaling to 200 GiB |
+| api task | 0.25 vCPU, 0.5 GiB | 1 vCPU, 2 GiB |
+| web task | 0.5 vCPU, 1 GiB | 1 vCPU, 2 GiB |
 | nginx / worker task | 0.25 vCPU, 0.5 GiB | 0.5 vCPU, 1 GiB |
 | api, web, nginx tasks | 1 each, scaling to 3 / 3 / 2 | 2 each, scaling to 12 / 12 / 6 |
 | Workers | 6 services, 1 task each, off until `workersEnabled` | same |
 | Interface VPC endpoints | off (traffic uses the NAT) | on |
+| Container Insights, service-health alarms | off | on |
+| VPC flow logs | rejected traffic only | all traffic |
 
 The api, web and nginx services scale on average CPU (60%) and, for api and web, memory
 (75%). The floor is the configured desired count and the ceiling is `autoscaling.<service>.maxCount`.
@@ -54,8 +57,9 @@ Traffic enters through a Network Load Balancer, which has no per-target request 
 so there is no request-count policy. Workers do not autoscale. The S3 gateway endpoint is
 always created; the ECR api/dkr, Secrets Manager and CloudWatch Logs interface endpoints
 (`interfaceEndpointsEnabled`) keep image pulls, secret resolution and log delivery off the
-NAT. VPC flow logs (all traffic) go to `/dad/<env>/vpc-flow-logs` with
-`flowLogRetentionDays`.
+NAT. VPC flow logs (`flowLogTrafficType`) go to `/dad/<env>/vpc-flow-logs` with
+`flowLogRetentionDays`. The ECS service-health alarms read Container Insights metrics, so
+they exist only where `containerInsights` is on; staging keeps the database alarms only.
 
 Staging is single-AZ for the database and has one NAT gateway, so an AZ outage takes it
 down; production is Multi-AZ for the database and has a NAT per AZ.

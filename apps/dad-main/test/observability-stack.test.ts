@@ -8,16 +8,27 @@ describe('ObservabilityStack', () => {
   });
 
   it('alarms only the running services while workers are off', () => {
-    const t = Template.fromStack(buildGraph('staging').observability);
+    const t = Template.fromStack(buildGraph('production').observability);
     // api, web, nginx + 2 database.
     t.resourceCountIs('AWS::CloudWatch::Alarm', 5);
   });
 
   it('adds an alarm per worker service once workers are on', () => {
     const t = Template.fromStack(
-      buildGraph('staging', { workersEnabled: true }).observability,
+      buildGraph('production', { workersEnabled: true }).observability,
     );
     t.resourceCountIs('AWS::CloudWatch::Alarm', 11);
+  });
+
+  it('keeps only the database alarms where Container Insights is off (staging)', () => {
+    const t = Template.fromStack(
+      buildGraph('staging', { workersEnabled: true }).observability,
+    );
+    t.resourceCountIs('AWS::CloudWatch::Alarm', 2);
+    const metrics = Object.values(t.findResources('AWS::CloudWatch::Alarm')).map(
+      (a) => a.Properties.MetricName,
+    );
+    expect(metrics).not.toContain('RunningTaskCount');
   });
 
   it('alarms on database CPU and free storage', () => {
@@ -31,7 +42,7 @@ describe('ObservabilityStack', () => {
   });
 
   it('service-health alarms fire when running < desired', () => {
-    const t = Template.fromStack(buildGraph('staging').observability);
+    const t = Template.fromStack(buildGraph('production').observability);
     t.hasResourceProperties('AWS::CloudWatch::Alarm', {
       ComparisonOperator: 'LessThanThreshold',
       MetricName: 'RunningTaskCount',
