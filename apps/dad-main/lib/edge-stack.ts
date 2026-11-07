@@ -31,6 +31,16 @@ const CLOUDFLARE_RANGES = [
   '2c0f:f248::/32',
 ];
 
+/**
+ * TCP connect to the traffic port. nginx's own /health listener is bound to the task's
+ * loopback (127.0.0.1:8081), which the NLB cannot reach; the container health check
+ * covers it, and ECS only registers a task once that passes.
+ */
+const HEALTH_CHECK: elbv2.HealthCheck = {
+  protocol: elbv2.Protocol.TCP,
+  interval: cdk.Duration.seconds(10),
+};
+
 /** Props for {@link EdgeStack}. */
 export interface EdgeStackProps extends cdk.StackProps {
   readonly config: EnvConfig;
@@ -48,7 +58,8 @@ export interface EdgeStackProps extends cdk.StackProps {
  * EdgeStack.
  *
  * Internet-facing Network Load Balancer with TCP listeners 443→nginx:8443 and
- * 80→nginx:8080, targeting the nginx service. When
+ * 80→nginx:8080, targeting the nginx service with TCP health checks on the traffic
+ * port and a 30 s deregistration delay. When
  * config.cloudflareIngressEnabled is set, the nginx SG's edge ingress is
  * restricted to Cloudflare's published ranges instead of the open internet.
  *
@@ -94,11 +105,8 @@ export class EdgeStack extends cdk.Stack {
         containerName: 'nginx-Container',
         containerPort: 8443,
       })],
-      healthCheck: {
-        protocol: elbv2.Protocol.HTTP,
-        port: '8081',
-        path: '/health',
-      },
+      healthCheck: HEALTH_CHECK,
+      deregistrationDelay: cdk.Duration.seconds(30),
     });
 
     // HTTP: TCP 80 → nginx 8080.
@@ -113,11 +121,8 @@ export class EdgeStack extends cdk.Stack {
         containerName: 'nginx-Container',
         containerPort: 8080,
       })],
-      healthCheck: {
-        protocol: elbv2.Protocol.HTTP,
-        port: '8081',
-        path: '/health',
-      },
+      healthCheck: HEALTH_CHECK,
+      deregistrationDelay: cdk.Duration.seconds(30),
     });
 
     // --- Cloudflare ingress toggle --------------------------------------

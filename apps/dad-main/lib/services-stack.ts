@@ -50,8 +50,9 @@ interface WorkerSpec {
  * Exactly nine long-running Fargate services matching docker-compose.prod.yml:
  * api, web, nginx, and the six workers. Each is built through the shared
  * {@link TaskFactory}. The api is registered in Service Connect as `api` so web
- * resolves `http://api:8002`; the SG chain (from the network stack) already
- * restricts api:8002 to the web tier only.
+ * resolves `http://api:8002`, and web as `web` so nginx resolves its `web:3000`
+ * upstream; the SG chain (from the network stack) restricts api:8002 to the web
+ * tier and web:3000 to nginx.
  */
 export class ServicesStack extends cdk.Stack {
   public readonly services: Record<ServiceName, ecs.FargateService>;
@@ -243,8 +244,18 @@ export class ServicesStack extends cdk.Stack {
       desiredCount: this.initialCount('web'),
       vpcSubnets: computeSubnets,
       securityGroups: [webSecurityGroup],
-      // web is a Service Connect client (resolves api) but publishes nothing.
-      serviceConnectConfiguration: { namespace: namespaceName },
+      // web resolves `api` as a client and publishes itself as `web:3000`, the upstream
+      // name nginx resolves at start.
+      serviceConnectConfiguration: {
+        namespace: namespaceName,
+        services: [
+          {
+            portMappingName: 'web',
+            dnsName: 'web',
+            port: 3000,
+          },
+        ],
+      },
     });
 
     // --- nginx ----------------------------------------------------------
@@ -262,12 +273,13 @@ export class ServicesStack extends cdk.Stack {
       // Written to /etc/nginx/tls by the image's 04-tls-from-env.sh (ECS cannot mount a
       // secret as a file).
       secrets: secretFields(appSecrets.tls, ['INGRESS_TLS_FULLCHAIN', 'INGRESS_TLS_PRIVKEY']),
+      // 8081 is nginx's loopback-only /health listener: probed inside the task, never
+      // exposed, so it has no port mapping.
       portMappings: [
         { containerPort: 8080, name: 'http' },
         { containerPort: 8443, name: 'https' },
-        { containerPort: 8081, name: 'health' },
       ],
-      // Same probe as docker-compose.prod.yml (the NLB target group also checks :8081).
+      // Same probe as docker-compose.prod.yml.
       healthCheck: {
         command: ['CMD', 'wget', '-q', '-O', '/dev/null', 'http://127.0.0.1:8081/health'],
         interval: cdk.Duration.seconds(10),
@@ -285,7 +297,11 @@ export class ServicesStack extends cdk.Stack {
       desiredCount: this.initialCount('nginx'),
       vpcSubnets: computeSubnets,
       securityGroups: [nginxSecurityGroup],
+      // nginx is a Service Connect client only: it resolves `web` once at start.
+      serviceConnectConfiguration: { namespace: namespaceName },
     });
+    // The `web` name must exist before nginx starts, or nginx exits on an unknown upstream.
+    this.services.nginx.node.addDependency(this.services.web);
 
     if (config.autoscaling.enabled) {
       this.autoscale('api', this.services.api, config.autoscaling.api);

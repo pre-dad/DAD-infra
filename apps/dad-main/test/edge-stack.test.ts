@@ -127,13 +127,27 @@ describe('EdgeStack', () => {
     expect(rules.filter((r) => r.CidrIp === '0.0.0.0/0')).toHaveLength(0);
   });
 
-  it('lets the NLB reach the nginx health listener', () => {
+  it('health-checks the nginx targets with TCP on the traffic port, not the loopback-only 8081', () => {
+    for (const env of ['staging', 'production'] as const) {
+      const t = Template.fromStack(buildGraph(env).edge);
+      const groups = Object.values(t.findResources('AWS::ElasticLoadBalancingV2::TargetGroup'));
+      expect(groups).toHaveLength(2);
+      for (const g of groups) {
+        expect(g.Properties.HealthCheckProtocol).toBe('TCP');
+        expect(g.Properties.HealthCheckPort).toBeUndefined();
+        expect(g.Properties.HealthCheckPath).toBeUndefined();
+        expect(g.Properties.TargetGroupAttributes).toContainEqual({
+          Key: 'deregistration_delay.timeout_seconds',
+          Value: '30',
+        });
+      }
+    }
+  });
+
+  it('does not open 8081 to anything', () => {
     const t = Template.fromStack(buildGraph('staging').network);
-    t.hasResourceProperties('AWS::EC2::SecurityGroupIngress', {
-      FromPort: 8081,
-      ToPort: 8081,
-      Description: 'nginx health check from NLB',
-    });
+    const rules = Object.values(t.findResources('AWS::EC2::SecurityGroupIngress'));
+    expect(rules.filter((r) => r.Properties.FromPort === 8081)).toHaveLength(0);
   });
 
   it('outputs the NLB DNS name', () => {

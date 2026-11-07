@@ -207,8 +207,24 @@ Do not deploy `apps/atm`. DAD-Main's ATM gate and its Worker ledger are the sing
 of truth for findings, and this runner cannot publish to that ledger (design doc §6.5,
 DAD-Docs ADR 0006).
 
-## Not verified
+## Verified against code, not against AWS
 
-Nothing in this runbook has been run: no environment exists yet. In particular that
-CloudFormation can create the services in one pass once steps 3–6 are done,
-and that Service Connect resolves `web` when nginx starts.
+Nothing in this runbook has been run: no environment exists yet. Two reported first-deploy
+blockers were checked against DAD-Main's `deploy/nginx` and fixed here:
+
+- **NLB health check.** nginx binds `/health` to `127.0.0.1:8081` (`nginx.conf`), which the
+  NLB cannot reach, so the old HTTP check on 8081 would have left every target unhealthy.
+  The target groups now use a TCP check on the traffic port (8443, 8080); the 8081 security
+  group rule and port mapping are gone. The container health check still probes
+  `127.0.0.1:8081/health` inside the task, and ECS registers a task only once that passes.
+  DAD-Main needs no change.
+- **`web` resolution.** nginx's `server web:3000;` (the Dockerfile removes the Docker
+  resolver) needs a Service Connect name. `web` now publishes itself as `web:3000`, nginx
+  joins the namespace as a client, and the nginx service waits for the web service. The
+  existing nginx to web:3000 and web to api:8002 security group rules carry that traffic.
+
+Target group deregistration delay is 30 seconds (the default is 300).
+
+Still not verifiable without AWS: that CloudFormation creates the services in one pass once
+steps 3 to 6 are done, that the Service Connect proxy in the nginx task resolves `web` at
+nginx start, and that the NLB targets turn healthy.
