@@ -29,6 +29,21 @@ describe('DataStack', () => {
     prod.hasResourceProperties('AWS::RDS::DBInstance', { MultiAZ: true });
   });
 
+  it('sizes the instance and storage per environment', () => {
+    const staging = Template.fromStack(buildGraph('staging').data);
+    staging.hasResourceProperties('AWS::RDS::DBInstance', {
+      DBInstanceClass: 'db.t4g.small',
+      AllocatedStorage: '20',
+      MaxAllocatedStorage: 200,
+    });
+    const prod = Template.fromStack(buildGraph('production').data);
+    prod.hasResourceProperties('AWS::RDS::DBInstance', {
+      DBInstanceClass: 'db.t3.large',
+      AllocatedStorage: '50',
+      MaxAllocatedStorage: 200,
+    });
+  });
+
   it('creates no Postgres roles (no custom resource for role creation)', () => {
     const t = Template.fromStack(buildGraph('staging').data);
     // The only resources are RDS, proxy, secrets, and their plumbing — never a

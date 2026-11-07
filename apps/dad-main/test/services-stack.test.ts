@@ -2,6 +2,35 @@ import { Template, Match } from 'aws-cdk-lib/assertions';
 import { buildGraph } from './helpers';
 
 describe('ServicesStack', () => {
+  it.each(['staging', 'production'] as const)(
+    '%s: ECR pull is on the execution roles only, never a task role',
+    (env) => {
+      const t = Template.fromStack(buildGraph(env).services);
+      const roleIds = (prop: 'TaskRoleArn' | 'ExecutionRoleArn') =>
+        new Set(
+          Object.values(t.findResources('AWS::ECS::TaskDefinition')).map(
+            (td) => td.Properties[prop]['Fn::GetAtt'][0] as string,
+          ),
+        );
+      const taskRoles = roleIds('TaskRoleArn');
+      const executionRoles = roleIds('ExecutionRoleArn');
+      const pullers = new Set<string>();
+      for (const policy of Object.values(t.findResources('AWS::IAM::Policy'))) {
+        const pulls = JSON.stringify(policy.Properties.PolicyDocument).includes(
+          'ecr:BatchGetImage',
+        );
+        if (pulls) {
+          for (const role of policy.Properties.Roles as Array<{ Ref: string }>) {
+            pullers.add(role.Ref);
+          }
+        }
+      }
+      expect(taskRoles.size).toBeGreaterThan(0);
+      expect([...taskRoles].filter((r) => pullers.has(r))).toEqual([]);
+      expect([...executionRoles].every((r) => pullers.has(r))).toBe(true);
+    },
+  );
+
   it('creates exactly 9 ECS services', () => {
     const t = Template.fromStack(buildGraph('staging').services);
     t.resourceCountIs('AWS::ECS::Service', 9);
