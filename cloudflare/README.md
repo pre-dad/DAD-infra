@@ -125,6 +125,6 @@ Rules are also visible and editable in the dashboard under Security → Security
 npm run test:cloudflare
 ```
 
-Runs `node --test cloudflare/` with a mocked `fetch`: expression sanity, the webhook and
+Runs `node --test cloudflare/*.test.mjs` with a mocked `fetch`: expression sanity, the webhook and
 health exclusions, the threshold table above, plan tiers, request bodies, unmanaged rule
 preservation, idempotency, and the refusal without `--apply`.
