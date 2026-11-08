@@ -108,7 +108,7 @@ select the environment.
 
 ## Offline verification (no deploys)
 
-Nothing is deployed yet; the first deploy follows [docs/bootstrap.md](docs/bootstrap.md).
+The NLB target health check (TCP on the traffic port) and the `web`/`api` Service Connect names nginx and web rely on were checked against DAD-Main's nginx config but not against AWS; see [docs/bootstrap.md](docs/bootstrap.md#verified-against-code-not-against-aws). Nothing is deployed yet; the first deploy follows [docs/bootstrap.md](docs/bootstrap.md).
 The checks below are offline and need no AWS credentials. CI's required `synth` check
 runs the same tests and synth on every PR.
 

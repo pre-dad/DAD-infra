@@ -241,6 +241,49 @@ describe('ServicesStack', () => {
     });
   });
 
+  it('web registers in Service Connect as web:3000, the upstream nginx resolves', () => {
+    const t = Template.fromStack(buildGraph('staging').services);
+    t.hasResourceProperties('AWS::ECS::Service', {
+      ServiceName: 'web',
+      ServiceConnectConfiguration: Match.objectLike({
+        Enabled: true,
+        Namespace: 'dad.staging.local',
+        Services: [
+          Match.objectLike({
+            PortName: 'web',
+            ClientAliases: [Match.objectLike({ DnsName: 'web', Port: 3000 })],
+          }),
+        ],
+      }),
+    });
+  });
+
+  it('nginx joins the Service Connect namespace as a client only, after web exists', () => {
+    const t = Template.fromStack(buildGraph('staging').services);
+    const services = t.findResources('AWS::ECS::Service');
+    const [nginxId, nginx] = Object.entries(services).find(
+      ([, s]) => s.Properties.ServiceName === 'nginx',
+    )!;
+    const webId = Object.keys(services).find((k) => services[k].Properties.ServiceName === 'web')!;
+    expect(nginx.Properties.ServiceConnectConfiguration).toEqual(
+      expect.objectContaining({ Enabled: true, Namespace: 'dad.staging.local' }),
+    );
+    expect(nginx.Properties.ServiceConnectConfiguration.Services).toBeUndefined();
+    expect(nginx.DependsOn).toContain(webId);
+    expect(nginxId).not.toBe(webId);
+  });
+
+  it('keeps the nginx 8081 health listener out of the task port mappings', () => {
+    const t = Template.fromStack(buildGraph('staging').services);
+    const def = Object.values(t.findResources('AWS::ECS::TaskDefinition')).find(
+      (d) => d.Properties.Family === 'dad-nginx',
+    )!;
+    const ports = def.Properties.ContainerDefinitions[0].PortMappings.map(
+      (p: { ContainerPort: number }) => p.ContainerPort,
+    );
+    expect(ports).toEqual([8080, 8443]);
+  });
+
   describe('autoscaling', () => {
     const targets = (t: Template) =>
       Object.values(t.findResources('AWS::ApplicationAutoScaling::ScalableTarget'));
