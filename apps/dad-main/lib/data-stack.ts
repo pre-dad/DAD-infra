@@ -80,6 +80,18 @@ export class DataStack extends cdk.Stack {
       'rds from the owner bootstrap task',
     );
 
+    const removalPolicy = config.deletionProtection
+      ? cdk.RemovalPolicy.RETAIN
+      : cdk.RemovalPolicy.DESTROY;
+
+    // The master secret is created here, not by the instance, so its removal policy can be
+    // set: the instance only exposes the attachment, whose policy does not reach the secret.
+    const masterSecret = new rds.DatabaseSecret(this, 'MasterSecret', {
+      username: 'dad_master',
+      secretName: `dad/${config.env}/rds/master`,
+    });
+    masterSecret.applyRemovalPolicy(removalPolicy);
+
     // --- RDS PostgreSQL 16 ----------------------------------------------
     this.instance = new rds.DatabaseInstance(this, 'Postgres', {
       engine: rds.DatabaseInstanceEngine.postgres({
@@ -101,12 +113,8 @@ export class DataStack extends cdk.Stack {
       deletionProtection: config.deletionProtection,
       databaseName: config.dbName,
       // Master credentials in Secrets Manager (used for the owner bootstrap).
-      credentials: rds.Credentials.fromGeneratedSecret('dad_master', {
-        secretName: `dad/${config.env}/rds/master`,
-      }),
-      removalPolicy: config.deletionProtection
-        ? cdk.RemovalPolicy.RETAIN
-        : cdk.RemovalPolicy.DESTROY,
+      credentials: rds.Credentials.fromSecret(masterSecret),
+      removalPolicy,
     });
     this.masterSecret = this.instance.secret!;
 
@@ -120,6 +128,7 @@ export class DataStack extends cdk.Stack {
         this,
         `LoginSecret-${login.login}`,
         {
+          removalPolicy,
           secretName: `dad/${config.env}/db/${login.login}`,
           description: `DAD ${config.env} DB login '${login.login}' (${login.envVar}).`,
           generateSecretString: {

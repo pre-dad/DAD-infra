@@ -41,12 +41,12 @@ capacity.
 | | staging | production |
 |---|---|---|
 | Availability zones | 2 subnets per tier, 1 NAT gateway | 2 subnets per tier, 2 NAT gateways |
-| Database | RDS PostgreSQL 16, `db.t4g.small`, single-AZ, 7-day backups | `db.t3.large`, Multi-AZ, 14-day backups |
+| Database | RDS PostgreSQL 16, `db.t4g.small`, single-AZ, 7-day backups | `db.t3.large`, Multi-AZ, 14-day backups, daily and monthly copies to us-west-2 (see [docs/disaster-recovery.md](docs/disaster-recovery.md)) |
 | Storage | 20 GiB gp3, autoscaling to 200 GiB | 50 GiB gp3, autoscaling to 200 GiB |
 | api task | 0.25 vCPU, 0.5 GiB | 1 vCPU, 2 GiB |
 | web task | 0.5 vCPU, 1 GiB | 1 vCPU, 2 GiB |
 | nginx / worker task | 0.25 vCPU, 0.5 GiB | 0.5 vCPU, 1 GiB |
-| api, web, nginx tasks | 1 each, scaling to 3 / 3 / 2 | 2 each, scaling to 12 / 12 / 6 |
+| api, web, nginx tasks | 1 each, scaling to 3 / 3 / 2 | 3 each (floor), spread across both AZs with rebalancing, scaling to 12 / 12 / 6 |
 | Workers | 6 services, 1 task each, off until `workersEnabled` | same |
 | Interface VPC endpoints | off (traffic uses the NAT) | on |
 | Container Insights, service-health alarms | off | on |
@@ -80,6 +80,14 @@ one `db.t3` instance behind RDS Proxy, which pools connections but does not add 
   database class or Aurora PostgreSQL. Split the worker tiers into separate services with
   their own counts, and replace the fixed NLB-to-nginx fan-out limits (task ceilings,
   NAT throughput) with measured values from a load test run against staging first.
+
+### Production safeguards
+
+Production stacks have termination protection (`deletionProtection`), the RDS master,
+per-login and SMTP secrets are retained on stack deletion, and the database is copied to
+a second region by AWS Backup. Restore steps, RPO/RTO assumptions and the first-deploy
+checks are in [docs/disaster-recovery.md](docs/disaster-recovery.md). Staging keeps all of
+these off so it stays cheap and deletable.
 
 Neither step is applied: instance classes are unchanged until a load test justifies them.
 
