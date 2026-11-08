@@ -12,6 +12,7 @@ DAD-infra/
     dad-main/        # DAD-Main estate: VPC, RDS + Proxy, ECS Fargate, SES, NLB, pipeline IAM
       lambda/        #   SES SMTP credential rotation function (Python)
     atm/             # DAD-Quality runner on AWS: built and tested, NOT deployed (see design §6.5)
+  cloudflare/        # edge rate limits and firewall rules for the DAD hostnames (see its README)
   docs/
     design/          # architecture and decisions
     bootstrap.md     # first deploy of an environment
