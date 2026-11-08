@@ -1,16 +1,7 @@
 #!/usr/bin/env node
 import * as cdk from 'aws-cdk-lib';
 import { getConfig } from '../lib/config';
-import { NetworkStack } from '../lib/network-stack';
-import { DataStack } from '../lib/data-stack';
-import { EcsClusterStack } from '../lib/ecs-cluster-stack';
-import { ServicesStack } from '../lib/services-stack';
-import { MaintenanceStack } from '../lib/maintenance-stack';
-import { EdgeStack } from '../lib/edge-stack';
-import { ObservabilityStack } from '../lib/observability-stack';
-import { SesStack } from '../lib/ses-stack';
-import { AppSecretsStack } from '../lib/app-secrets-stack';
-import { PipelineIamStack } from '../lib/pipeline-iam-stack';
+import { buildDadApp } from '../lib/dad-app';
 
 /**
  * DAD infrastructure CDK app entrypoint.
@@ -20,9 +11,7 @@ import { PipelineIamStack } from '../lib/pipeline-iam-stack';
  * CDK_DEFAULT_REGION as the offline-synth fallback so `cdk synth` works with
  * dummy credentials.
  *
- * Stack graph (cross-references passed as props):
- *   network → data → ecs-cluster → services → {maintenance, edge, observability}
- *   ses and pipeline-iam are independent.
+ * The stack graph lives in lib/dad-app.ts.
  */
 const app = new cdk.App();
 
@@ -48,97 +37,6 @@ const env: cdk.Environment = {
 cdk.Tags.of(app).add('Project', 'dad');
 cdk.Tags.of(app).add('Environment', config.env);
 
-const stackId = (name: string): string => `dad-${name}-${config.env}`;
-
-// 1. Network — VPC, subnets, SG chain.
-const network = new NetworkStack(app, stackId('network'), { env, config });
-
-// 2. Data — RDS + RDS Proxy + per-login secrets.
-const data = new DataStack(app, stackId('data'), {
-  env,
-  config,
-  vpc: network.vpc,
-  isolatedSubnets: network.isolatedSubnets,
-  proxySecurityGroup: network.proxySecurityGroup,
-});
-
-// 3. ECS cluster — Fargate cluster, Service Connect namespace, ECR, log groups.
-const ecsCluster = new EcsClusterStack(app, stackId('ecs-cluster'), {
-  env,
-  config,
-  vpc: network.vpc,
-});
-
-// SES (sending identity + SMTP secret) and the application secrets come before the
-// services, which inject them.
-const ses = new SesStack(app, stackId('ses'), { env, config });
-const appSecrets = new AppSecretsStack(app, stackId('app-secrets'), { env, config });
-// 4. Services — the nine long-running Fargate services.
-const services = new ServicesStack(app, stackId('services'), {
-  env,
-  config,
-  computeSubnets: network.computeSubnets,
-  cluster: ecsCluster.cluster,
-  namespaceName: ecsCluster.namespaceName,
-  repositories: ecsCluster.repositories,
-  logGroups: ecsCluster.logGroups,
-  proxyEndpoint: data.proxyEndpoint,
-  loginSecrets: data.loginSecrets,
-  computeSubnetCidrs: network.computeSubnetCidrs,
-  nginxSecurityGroup: network.nginxSecurityGroup,
-  webSecurityGroup: network.webSecurityGroup,
-  apiSecurityGroup: network.apiSecurityGroup,
-  workersSecurityGroup: network.workersSecurityGroup,
-  appSecrets: {
-    stripe: appSecrets.stripe,
-    encryption: appSecrets.encryption,
-    tls: appSecrets.tls,
-    smtp: ses.smtpSecret,
-  },
-});
-
-// 5. Maintenance — one-off task defs + scheduled reconcile + exit alarm.
-new MaintenanceStack(app, stackId('maintenance'), {
-  env,
-  config,
-  vpc: network.vpc,
-  computeSubnets: network.computeSubnets,
-  cluster: ecsCluster.cluster,
-  repositories: ecsCluster.repositories,
-  proxyEndpoint: data.proxyEndpoint,
-  loginSecrets: data.loginSecrets,
-  masterSecret: data.masterSecret,
-  databaseHost: data.instance.dbInstanceEndpointAddress,
-  workersSecurityGroup: network.workersSecurityGroup,
-  appSecrets: {
-    stripe: appSecrets.stripe,
-    encryption: appSecrets.encryption,
-    tls: appSecrets.tls,
-    smtp: ses.smtpSecret,
-  },
-});
-
-// 6. Edge — internet-facing NLB + Cloudflare SG toggle.
-new EdgeStack(app, stackId('edge'), {
-  env,
-  config,
-  vpc: network.vpc,
-  publicSubnets: network.publicSubnets,
-  nginxService: services.services.nginx,
-  nginxSecurityGroup: network.nginxSecurityGroup,
-  nlbSecurityGroup: network.nlbSecurityGroup,
-});
-
-// 7. Observability — SNS topic + ECS health + database alarms.
-new ObservabilityStack(app, stackId('observability'), {
-  env,
-  config,
-  clusterName: ecsCluster.cluster.clusterName,
-  services: services.services,
-  database: data.instance,
-});
-
-// 9. Pipeline IAM — GitHub OIDC provider + deploy roles.
-new PipelineIamStack(app, stackId('pipeline-iam'), { env, config });
+buildDadApp(app, config, env);
 
 app.synth();

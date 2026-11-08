@@ -23,6 +23,13 @@ manual steps between them.
 npx cdk bootstrap "aws://<account-id>/us-east-2"
 ```
 
+For production, also bootstrap the disaster-recovery region (the cross-region backup
+vault deploys there; see [disaster-recovery.md](disaster-recovery.md)):
+
+```sh
+npx cdk bootstrap "aws://<account-id>/us-west-2"
+```
+
 ### 2. Deploy the foundation stacks
 
 From `apps/dad-main`:
@@ -32,6 +39,9 @@ npx cdk deploy -c env=$ENV \
   dad-network-$ENV dad-data-$ENV dad-ecs-cluster-$ENV \
   dad-ses-$ENV dad-app-secrets-$ENV dad-pipeline-iam-$ENV
 ```
+
+In production also deploy `dad-dr-vault-production` and `dad-backup-production` (the
+database backup copies; check them as listed in [disaster-recovery.md](disaster-recovery.md)).
 
 This creates the VPC, the database, the RDS Proxy and the per-login secrets, the cluster,
 the three ECR repositories, the SES identity, the application secrets (with empty
