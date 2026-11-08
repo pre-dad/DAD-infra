@@ -143,6 +143,16 @@ export interface EnvConfig extends SharedEnvConfig {
    * the desired count, not that variable.)
    */
   readonly workersEnabled: boolean;
+  /**
+   * Whether ECS actively rebalances api, web and nginx tasks across the two AZs after an
+   * AZ recovers or a rollout skews them. Off in staging, which runs one task each.
+   */
+  readonly availabilityZoneRebalancing: boolean;
+  /**
+   * Region that receives cross-region copies of the database backups (AWS Backup).
+   * Undefined disables the backup plan and the destination vault entirely.
+   */
+  readonly crossRegionBackupRegion?: string;
 }
 
 /** The DAD-Main-specific fields layered on top of the shared core, per env. */
@@ -228,6 +238,7 @@ const STAGING: AppFields = {
   cloudflareIngressEnabled: true,
   // Off until the environment is ready to send mail and talk to Stripe (docs/bootstrap.md).
   workersEnabled: false,
+  availabilityZoneRebalancing: false,
 };
 
 const PRODUCTION: AppFields = {
@@ -240,7 +251,8 @@ const PRODUCTION: AppFields = {
   deletionProtection: true,
   // Longer retention in production for audit/forensics.
   logRetentionDays: 365,
-  desiredCounts: { api: 2, web: 2, nginx: 2, workers: 1 },
+  // Three per tier so losing one AZ (or one task mid-rollout) leaves at least two serving.
+  desiredCounts: { api: 3, web: 3, nginx: 3, workers: 1 },
   taskSizes: PRODUCTION_TASK_SIZES,
   database: PRODUCTION_DATABASE,
   containerInsights: true,
@@ -251,6 +263,8 @@ const PRODUCTION: AppFields = {
   sendingSubdomain: 'mail.dynamicaid.org',
   cloudflareIngressEnabled: true,
   workersEnabled: false,
+  availabilityZoneRebalancing: true,
+  crossRegionBackupRegion: 'us-west-2',
 };
 
 const APP_FIELDS: Record<EnvName, AppFields> = {

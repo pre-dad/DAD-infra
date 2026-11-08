@@ -59,6 +59,12 @@ export class ServicesStack extends cdk.Stack {
 
   private config!: ServicesStackProps['config'];
 
+  private get azRebalancing(): ecs.AvailabilityZoneRebalancing | undefined {
+    return this.config.availabilityZoneRebalancing
+      ? ecs.AvailabilityZoneRebalancing.ENABLED
+      : undefined;
+  }
+
   /**
    * The desired count to put in the template. Omitted for an autoscaled service: with
    * a count in the template every `cdk deploy` would reset a scaled-out service back
@@ -195,6 +201,7 @@ export class ServicesStack extends cdk.Stack {
       serviceName: 'api',
       taskDefinition: api.taskDefinition,
       desiredCount: this.initialCount('api'),
+      availabilityZoneRebalancing: this.azRebalancing,
       vpcSubnets: computeSubnets,
       securityGroups: [apiSecurityGroup],
       // Register `api` in Service Connect so web resolves http://api:8002.
@@ -242,6 +249,7 @@ export class ServicesStack extends cdk.Stack {
       serviceName: 'web',
       taskDefinition: web.taskDefinition,
       desiredCount: this.initialCount('web'),
+      availabilityZoneRebalancing: this.azRebalancing,
       vpcSubnets: computeSubnets,
       securityGroups: [webSecurityGroup],
       // web resolves `api` as a client and publishes itself as `web:3000`, the upstream
@@ -295,6 +303,7 @@ export class ServicesStack extends cdk.Stack {
       serviceName: 'nginx',
       taskDefinition: nginx.taskDefinition,
       desiredCount: this.initialCount('nginx'),
+      availabilityZoneRebalancing: this.azRebalancing,
       vpcSubnets: computeSubnets,
       securityGroups: [nginxSecurityGroup],
       // nginx is a Service Connect client only: it resolves `web` once at start.

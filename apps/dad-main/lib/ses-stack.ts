@@ -65,6 +65,9 @@ export class SesStack extends cdk.Stack {
     // template carries no credential.
     this.smtpSecret = new secretsmanager.Secret(this, 'SmtpSecret', {
       secretName: `dad/${config.env}/ses/smtp`,
+      removalPolicy: config.deletionProtection
+        ? cdk.RemovalPolicy.RETAIN
+        : cdk.RemovalPolicy.DESTROY,
       description:
         'DONOR_SMTP_* values for SES. Username/password are set by the rotation function (lambda/smtp-rotation).',
       generateSecretString: {

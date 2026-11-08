@@ -292,7 +292,7 @@ describe('ServicesStack', () => {
 
     it.each([
       ['staging', { api: [1, 3], web: [1, 3], nginx: [1, 2] }],
-      ['production', { api: [2, 12], web: [2, 12], nginx: [2, 6] }],
+      ['production', { api: [3, 12], web: [3, 12], nginx: [3, 6] }],
     ] as const)('%s: api, web and nginx scale between their desired count and the env max', (env, bounds) => {
       const t = Template.fromStack(buildGraph(env).services);
       const found = targets(t).map((r) => [
@@ -354,7 +354,7 @@ describe('ServicesStack', () => {
       );
       expect(targets(t)).toHaveLength(0);
       const services = Object.values(t.findResources('AWS::ECS::Service'));
-      expect(services.find((s) => s.Properties.ServiceName === 'api')!.Properties.DesiredCount).toBe(2);
+      expect(services.find((s) => s.Properties.ServiceName === 'api')!.Properties.DesiredCount).toBe(3);
     });
 
     it('is configurable: a different max and no memory target', () => {
@@ -378,7 +378,7 @@ describe('ServicesStack', () => {
         buildGraph('production', {
           autoscaling: { ...base, web: { maxCount: 1, cpuTargetPercent: 60 } },
         }),
-      ).toThrow(/maxCount \(1\) is below the desired count \(2\)/);
+      ).toThrow(/maxCount \(1\) is below the desired count \(3\)/);
     });
   });
 });
