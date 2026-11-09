@@ -137,3 +137,17 @@ cd apps/dad-main
 CDK_DEFAULT_ACCOUNT=111111111111 CDK_DEFAULT_REGION=us-east-2 npx cdk synth -c env=staging
 CDK_DEFAULT_ACCOUNT=111111111111 CDK_DEFAULT_REGION=us-east-2 npx cdk synth -c env=production
 ```
+
+## Dependency security
+
+`npm ci` installs two reproducible security replacements until upstream incorporates
+the fixes. Jest's `deepmerge` is overridden by the small MIT-licensed hardened copy
+in `vendor/deepmerge` (GHSA-gcqx-w48m-w2h4). CDK bundles `minimatch` 10.2.6, which
+npm overrides cannot replace, so the checked-in postinstall script links CDK to
+the pinned patched 11.0.1 dependency (GHSA-g3hv-75wg-m249). The script fails if the
+expected package versions change. Do not use `--ignore-scripts` for this project.
+
+Run `npm run test:security` after installation; CI runs it before CDK tests and
+synthesis. Registry/Dependabot scans may still flag CDK's original bundled version
+in its published metadata; that alert remains open until upstream ships a fixed
+bundle. The regression check verifies the version CDK actually loads.
