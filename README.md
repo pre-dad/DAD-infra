@@ -105,7 +105,11 @@ exactly one repo:
 
 Create the `staging` and `production` environments in **both** repos and set the
 variable on each (the role ARN is a stack output of the account's `pipeline-iam`
-stack). The credentialed jobs stay skipped until the variable is set. `atm-infra.yml`
+stack). Also set a repository-level variable of the same name: both pipelines read the
+switch outside the Environment (a job-level `if` in `dad-main-infra.yml`, the `ci-gate`
+step in `deploy.yml`), which sees only repository variables, so the
+repository value is the on-switch and the Environment value overrides it inside the job.
+The credentialed jobs stay skipped until the repository variable is set. `atm-infra.yml`
 has no deploy jobs (the runner is held).
 
 **The environment is the access control.** Any job in the trusted repo that runs under
