@@ -21,10 +21,11 @@ Export the profile and region first, for example
 `export AWS_PROFILE=<profile> AWS_REGION=us-east-2 AWS_DEFAULT_REGION=us-east-2`. The
 `cdk` CLI sets `CDK_DEFAULT_ACCOUNT` and `CDK_DEFAULT_REGION` from the profile, which
 overrides the dummy values used for offline synth, and the stacks hardcode `us-east-2`
-zones. Before any deploy, synthesize and confirm the manifest names only the expected
-account in `us-east-2`:
+zones. Before any deploy, synthesize from `apps/dad-main` (the only directory with a
+`cdk.json`) and confirm the manifest names only the expected account in `us-east-2`:
 
 ```sh
+cd apps/dad-main
 npx cdk synth -c env=$ENV -q --output /tmp/dad-synth
 grep -o 'aws://[0-9]*/[a-z0-9-]*' /tmp/dad-synth/manifest.json | sort -u
 ```
