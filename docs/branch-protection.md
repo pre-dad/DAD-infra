@@ -9,6 +9,11 @@ to reapply it.
 DAD-infra uses repository **rulesets** (not classic branch protection) and protects
 **both** `main` and `dev`.
 
+Two active rulesets exist, `protect-main` (targets `refs/heads/main`) and `protect-dev`
+(targets `refs/heads/dev`). They are identical apart from name and target ref. Both are
+`enforcement: active`, and both also set `require_extra_approval_for_unattributed_changes`
+(on, the GitHub default) and `strict_required_status_checks_policy` (on).
+
 ## What is applied
 
 | Setting | Value | Why |
@@ -19,7 +24,7 @@ DAD-infra uses repository **rulesets** (not classic branch protection) and prote
 | Required status check | `synth`, branch up to date | No red merges. |
 | Block force-pushes | on | Protects history. |
 | Block deletion | on | The branches cannot be deleted. |
-| Bypass | repository **admin**, `pull_request` mode | The owner can still merge a PR if a check cannot report. Use it only when a check cannot run, never to merge past one that failed or is still running (DAD-Docs ADR 0005). Does not allow direct pushes. |
+| Bypass | **none** (`bypass_actors: []`) | Nobody, including repository admins, can merge past a failed or pending `synth` or push directly. If a check cannot report, fix the check or change the ruleset (see below). |
 
 ### Why `synth` must always run
 
@@ -44,9 +49,7 @@ as an admin of `pre-dad/DAD-infra`; no workflow runs them.
   "target": "branch",
   "enforcement": "active",
   "conditions": { "ref_name": { "include": ["refs/heads/main"], "exclude": [] } },
-  "bypass_actors": [
-    { "actor_id": 5, "actor_type": "RepositoryRole", "bypass_mode": "pull_request" }
-  ],
+  "bypass_actors": [],
   "rules": [
     {
       "type": "pull_request",
@@ -72,8 +75,6 @@ as an admin of `pre-dad/DAD-infra`; no workflow runs them.
   ]
 }
 ```
-
-`actor_id: 5` is GitHub's built-in **Admin** repository role.
 
 Create:
 
@@ -101,8 +102,12 @@ gh api repos/pre-dad/DAD-infra/rulesets --jq '.[] | {name, enforcement}'
 gh api repos/pre-dad/DAD-infra --jq .default_branch
 ```
 
-Both rulesets should be `active` and the default branch `main`.
+Both rulesets should be `active` and the default branch `main`. To inspect a ruleset in
+full (read-only), run `gh api repos/pre-dad/DAD-infra/rulesets/<id>` and check
+`bypass_actors` is `[]`.
 
 ## When collaborators join
 
-Raise `required_approving_review_count` to 1 and reconsider the admin bypass.
+Raise `required_approving_review_count` to 1 in both rulesets. There is no bypass today; if
+an emergency escape hatch is wanted, add one deliberately to `bypass_actors` and record it
+here.
