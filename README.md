@@ -109,8 +109,9 @@ stack). Also set a repository-level variable of the same name: both pipelines re
 switch outside the Environment (a job-level `if` in `dad-main-infra.yml`, the `ci-gate`
 step in `deploy.yml`), which sees only repository variables, so the
 repository value is the on-switch and the Environment value overrides it inside the job.
-The credentialed jobs stay skipped until the repository variable is set. `atm-infra.yml`
-has no deploy jobs (the runner is held).
+The credentialed jobs stay skipped until the repository variable is set. The shared
+`synth` job validates both CDK apps; only DAD-Main has deployment jobs (the ATM runner
+is held).
 
 **The environment is the access control.** Any job in the trusted repo that runs under
 the environment can assume the role, so restrict deployments in each environment's

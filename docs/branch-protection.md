@@ -28,13 +28,16 @@ Two active rulesets exist, `protect-main` (targets `refs/heads/main`) and `prote
 
 ### Why `synth` must always run
 
-A required check that never runs blocks the merge forever. Both infra workflows
-(`atm-infra.yml`, `dad-main-infra.yml`) therefore have **no `paths:` filter on
-`pull_request`**; on every PR each runs the unit tests (`npx jest`) and an offline
-`cdk synth` of both environments. Both define a job named `synth`, and the ruleset
-requires that name. `dad-main-infra.yml`'s deploy triggers (`push` to `dev` and `main`)
-stay path-filtered; `atm-infra.yml` has none. If you rename the `synth` job, update the
-ruleset in the same change.
+A required check that never runs blocks the merge forever. The consolidated
+`dad-main-infra.yml` workflow therefore has **no `paths:` filter on `pull_request`**.
+Its single `synth` job installs/builds once, runs the full workspace and Cloudflare
+tests once, and synthesizes both `apps/dad-main` and `apps/atm` in staging and
+production without AWS credentials. The ruleset still requires `synth`.
+
+Superseded PR runs are canceled; push/manual deployment runs stay serialized without
+cancellation. Deploy triggers and credential gates remain specific to DAD-Main;
+the ATM runner is validated offline and has no deployment job. Renaming `synth`
+requires an accompanying ruleset change.
 
 ## Apply (one-time per branch)
 
