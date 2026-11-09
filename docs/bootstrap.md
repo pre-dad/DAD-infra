@@ -15,6 +15,22 @@ CloudFormation waits for a new service to stabilize, and with the circuit breake
 service that cannot start fails the stack. So the stacks are deployed in groups, with
 manual steps between them.
 
+### Pin the region and account before deploying
+
+Export the profile and region first, for example
+`export AWS_PROFILE=<profile> AWS_REGION=us-east-2 AWS_DEFAULT_REGION=us-east-2`. The
+`cdk` CLI sets `CDK_DEFAULT_ACCOUNT` and `CDK_DEFAULT_REGION` from the profile, which
+overrides the dummy values used for offline synth, and the stacks hardcode `us-east-2`
+zones. Before any deploy, synthesize and confirm the manifest names only the expected
+account in `us-east-2`:
+
+```sh
+npx cdk synth -c env=$ENV -q --output /tmp/dad-synth
+grep -o 'aws://[0-9]*/[a-z0-9-]*' /tmp/dad-synth/manifest.json | sort -u
+```
+
+Expect exactly one line, `aws://<account-id>/us-east-2`.
+
 ## Steps
 
 ### 1. CDK bootstrap the account
@@ -78,7 +94,8 @@ are on Apple silicon: add `--platform linux/amd64`.
 ### 4. Create the image-tag parameter
 
 ```sh
-aws ssm put-parameter --name "/dad/$ENV/image-tag" --type String --value "$TAG"
+aws ssm put-parameter --name "/dad/$ENV/image-tag" --type String --value "$TAG" \
+  --region us-east-2
 ```
 
 CDK reads this parameter and never writes it. From now on `deploy.yml` updates it after
@@ -147,8 +164,11 @@ the latest revision, which CDK just created at `$TAG`.
 
 ```sh
 npx cdk deploy -c env=$ENV \
-  dad-services-$ENV dad-edge-$ENV dad-observability-$ENV
+  dad-edge-$ENV dad-services-$ENV dad-observability-$ENV
 ```
+
+The services stack depends on the edge stack (it references the NLB target groups), so
+edge deploys first. CDK orders them from that dependency whatever order you list them in.
 
 The NLB admits only Cloudflare's published ranges on 80 and 443. The list is built in
 (`apps/dad-main/lib/edge-stack.ts`); check it against
@@ -171,7 +191,15 @@ For each repository's `$ENV` GitHub Environment (already created, with branch ru
 | pre-dad/DAD-Main | `APP_DEPLOY_ROLE_ARN` | `AppDeployRoleArn` output of `dad-pipeline-iam-$ENV` |
 | pre-dad/DAD-Main | `DONOR_PUBLIC_ORIGIN`, `DONOR_STAFF_ORIGIN` | the environment's origins |
 
-The pipelines skip their credentialed jobs until these are set.
+The role variables need two levels. The deploy jobs gate on a job-level
+`if: vars.<NAME> != ''`, which sees only repository-level variables, so an
+Environment-only value leaves them skipped. Set a repository-level variable of the same
+name (the on-switch) and, on each Environment, a variable of that name holding that
+account's role ARN. Inside the job the Environment value overrides the repository one, and
+`role-to-assume` reads it. Unsetting the repository variable switches the deploy jobs off.
+DAD-Main's `deploy.yml` evaluates its switch in a step and reports when it is off;
+`dad-main-infra.yml` simply skips. `DONOR_PUBLIC_ORIGIN` and `DONOR_STAFF_ORIGIN` are read
+only inside the job, so Environment-level is enough.
 
 ### Turning the workers on
 
