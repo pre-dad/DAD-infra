@@ -39,6 +39,23 @@ cancellation. Deploy triggers and credential gates remain specific to DAD-Main;
 the ATM runner is validated offline and has no deployment job. Renaming `synth`
 requires an accompanying ruleset change.
 
+## Synchronizing protected branches before a release
+
+A release merge adds a commit to `main` that is not yet on `dev`. With strict checks,
+the next `dev` → `main` PR needs that history before it can merge. GitHub's **Update
+branch** button cannot do this: it attempts a direct update to protected `dev`, which
+requires a pull request and a passing `synth` check.
+
+Use a temporary branch and worktree based on current `origin/dev`, merge current
+`origin/main` into it, then open a PR from that branch into `dev`. Wait for `synth`,
+and merge the sync PR with **Create a merge commit**. Squashing or rebasing the sync
+would discard the ancestry needed to bring `dev` up to date with `main`.
+
+The existing `dev` → `main` release PR then updates automatically and runs `synth`
+again. Wait for its new check before merging it, also with **Create a merge commit**.
+If either protected branch advances meanwhile, repeat the sync against the latest
+heads. Keep both protections enabled; this flow needs no direct push or bypass.
+
 ## Apply (one-time per branch)
 
 These make live GitHub API calls. Run them yourself with the GitHub CLI authenticated
