@@ -2,6 +2,7 @@
 import * as cdk from 'aws-cdk-lib';
 import { getConfig } from '../lib/config';
 import { buildDadApp } from '../lib/dad-app';
+import { resolveTarget } from '../lib/target-env';
 
 /**
  * DAD infrastructure CDK app entrypoint.
@@ -27,11 +28,9 @@ const config = getConfig(envName);
 // CDK_DEFAULT_ACCOUNT/CDK_DEFAULT_REGION, so we prefer those when present and
 // fall back to the config account/region otherwise. The per-env config account
 // still governs the deploy target in CI, where these env vars carry the real
-// account id for the selected environment.
-const env: cdk.Environment = {
-  account: process.env.CDK_DEFAULT_ACCOUNT ?? config.account,
-  region: process.env.CDK_DEFAULT_REGION ?? config.region,
-};
+// account id for the selected environment. resolveTarget fails synth when they point
+// at a different region or a different real account than the selected env.
+const env: cdk.Environment = resolveTarget(config);
 
 // Tag everything with the environment for cost allocation and traceability.
 cdk.Tags.of(app).add('Project', 'dad');
