@@ -29,7 +29,9 @@ npx cdk synth -c env=$ENV -q --output /tmp/dad-synth
 grep -o 'aws://[0-9]*/[a-z0-9-]*' /tmp/dad-synth/manifest.json | sort -u
 ```
 
-Expect exactly one line, `aws://<account-id>/us-east-2`.
+Staging should show exactly `aws://<staging-account>/us-east-2`. Production should show
+exactly `aws://<prod-account>/us-east-2` and `aws://<prod-account>/us-west-2` (the
+cross-region backup vault, `dad-dr-vault-production`).
 
 ## Steps
 
