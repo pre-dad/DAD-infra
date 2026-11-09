@@ -11,6 +11,7 @@ import { ServiceName } from './ecs-cluster-stack';
 import { imageTagFor } from './image-tag';
 import { AppSecrets, databaseConnection, secretFields, TaskFactory } from './task-factory';
 import { ServiceScaling } from './config';
+import { APP_SECRET_FIELDS } from './app-secrets-stack';
 
 /** Props for {@link ServicesStack}. */
 export interface ServicesStackProps extends cdk.StackProps {
@@ -180,6 +181,7 @@ export class ServicesStack extends cdk.Stack {
           'DONOR_CONTENT_ENCRYPTION_KEY',
         ]),
         ...mailQueue,
+        ...secretFields(appSecrets.signIn, APP_SECRET_FIELDS.signIn),
       },
       portMappings: [{ containerPort: 8002, name: 'api' }],
       // Same probe as docker-compose.prod.yml. Liveness, not readiness: /health/ready
@@ -227,6 +229,7 @@ export class ServicesStack extends cdk.Stack {
         DONOR_API_BASE_URL: 'http://api:8002',
         DONOR_CLIENT_IP_HEADER: 'X-Real-IP',
       },
+      secrets: secretFields(appSecrets.webOAuth, APP_SECRET_FIELDS.webOAuth),
       portMappings: [{ containerPort: 3000, name: 'web' }],
       // Same probe as the web Dockerfile HEALTHCHECK, which ECS ignores.
       healthCheck: {
