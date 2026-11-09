@@ -80,11 +80,11 @@ deploy:
 TAG=$(git rev-parse HEAD)
 REGISTRY=<account-id>.dkr.ecr.us-east-2.amazonaws.com
 aws ecr get-login-password --region us-east-2 | docker login --username AWS --password-stdin "$REGISTRY"
-docker build -t "$REGISTRY/dad/api:$TAG" -f apps/donor-api/Dockerfile apps/donor-api
+docker build -t "$REGISTRY/dad/api:$TAG" -f apps/donor-api/Dockerfile .
 docker build -t "$REGISTRY/dad/web:$TAG" \
   --build-arg DONOR_PUBLIC_ORIGIN=<public origin> \
   --build-arg DONOR_STAFF_ORIGIN=<staff origin> \
-  -f apps/web/Dockerfile apps/web
+  -f apps/web/Dockerfile .
 docker build -t "$REGISTRY/dad/nginx:$TAG" deploy/nginx
 docker push "$REGISTRY/dad/api:$TAG"
 docker push "$REGISTRY/dad/web:$TAG"
