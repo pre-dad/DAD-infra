@@ -11,7 +11,7 @@ name: DAD-Main Infra (CDK)
 #
 # Flow (models DAD-Main/infra/.github/workflows/infra.yml):
 #   - every PR (unfiltered, so the required `synth` check always reports)
-#                              -> offline `cdk synth` of BOTH envs (no AWS creds).
+#                              -> offline `cdk synth` of both apps in BOTH envs (no AWS creds).
 #                                 This is the real PR signal.
 #   - push to dev              -> `cdk deploy -c env=staging`  (sandbox 853377042897).
 #   - push to main             -> `cdk deploy -c env=production` (216833405626),
@@ -49,7 +49,7 @@ permissions:
 
 concurrency:
   group: dad-main-infra-${{ github.ref }}
-  cancel-in-progress: false
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
   AWS_REGION: us-east-2
@@ -83,14 +83,16 @@ jobs:
       - run: npm run test:cloudflare
       # Offline validation: synth both environments with dummy account/region.
       # This is the real PR signal and needs no AWS credentials.
-      - name: cdk synth (staging + production, offline)
-        working-directory: apps/dad-main
+      - name: cdk synth (both apps, staging + production, offline)
         env:
           CDK_DEFAULT_ACCOUNT: "000000000000"
           CDK_DEFAULT_REGION: ${{ env.AWS_REGION }}
         run: |
-          npx cdk synth -c env=staging >/dev/null
-          npx cdk synth -c env=production >/dev/null
+          for app in dad-main atm; do
+            for target in staging production; do
+              (cd "apps/$app" && npx cdk synth -c env="$target" >/dev/null)
+            done
+          done
 
   # Merge to dev -> staging deploy. Skipped (green) until the account is
   # bootstrapped and INFRA_DEPLOY_ROLE_ARN is set (matches DAD-Main's pattern).
