@@ -37,12 +37,25 @@ describe('application secrets', () => {
         'DONOR_CONTENT_ENCRYPTION_KEY',
         'DONOR_EMAIL_ENCRYPTION_KEY',
         'DONOR_EMAIL_FROM',
+        'DONOR_OIDC_APPLE_CLIENT_ID',
+        'DONOR_OIDC_GOOGLE_CLIENT_ID',
+        'DONOR_OIDC_MODE',
+        'DONOR_OIDC_REQUIRE_NONCE',
+        'DONOR_SMS_ACCOUNT_ID',
+        'DONOR_SMS_AUTH_TOKEN',
+        'DONOR_SMS_FROM',
+        'DONOR_SMS_PROVIDER',
         'DONOR_SMTP_HOST',
         'DONOR_SMTP_PORT',
         'STRIPE_SECRET_KEY',
         'STRIPE_WEBHOOK_SECRET',
       ],
-      'dad-web': [],
+      'dad-web': [
+        'DONOR_OAUTH_APPLE_CLIENT_ID',
+        'DONOR_OAUTH_APPLE_CLIENT_SECRET',
+        'DONOR_OAUTH_GOOGLE_CLIENT_ID',
+        'DONOR_OAUTH_GOOGLE_CLIENT_SECRET',
+      ],
       'dad-nginx': ['INGRESS_TLS_FULLCHAIN', 'INGRESS_TLS_PRIVKEY'],
       'dad-stripe-worker': ['STRIPE_SECRET_KEY'],
       'dad-projection-worker': [],
@@ -73,6 +86,9 @@ describe('application secrets', () => {
       'INGRESS_TLS_PRIVKEY',
       'MASTER_PASSWORD',
       'OWNER_PASSWORD',
+      'DONOR_SMS_AUTH_TOKEN',
+      'DONOR_OAUTH_APPLE_CLIENT_SECRET',
+      'DONOR_OAUTH_GOOGLE_CLIENT_SECRET',
     ]);
     const offenders: string[] = [];
     for (const stack of [g.services, g.maintenance]) {
@@ -102,6 +118,17 @@ describe('application secrets', () => {
       /dad-app-secrets-staging.*EncryptionSecret.*:DONOR_CONTENT_ENCRYPTION_KEY::/,
     );
     expect(byName.DONOR_SMTP_HOST).toMatch(/dad-ses-staging.*SmtpSecret.*:DONOR_SMTP_HOST::/);
+    expect(byName.DONOR_SMS_AUTH_TOKEN).toMatch(/dad-app-secrets-staging.*SignInSecret.*:DONOR_SMS_AUTH_TOKEN::/);
+    const web = Object.values(defs).find((d) => d.Properties.Family === 'dad-web');
+    const webByName = Object.fromEntries(
+      (web?.Properties.ContainerDefinitions[0].Secrets as Array<{ Name: string; ValueFrom: unknown }>).map((s) => [
+        s.Name,
+        JSON.stringify(s.ValueFrom),
+      ]),
+    );
+    expect(webByName.DONOR_OAUTH_APPLE_CLIENT_SECRET).toMatch(
+      /dad-app-secrets-staging.*WebOAuthSecret.*:DONOR_OAUTH_APPLE_CLIENT_SECRET::/,
+    );
   });
 
   // The operator puts the real values in after the first deploy (docs/bootstrap.md). A
@@ -115,7 +142,9 @@ describe('application secrets', () => {
       );
       expect(Object.keys(byName).sort()).toEqual([
         `dad/${env}/app/encryption`,
+        `dad/${env}/app/sign-in`,
         `dad/${env}/app/stripe`,
+        `dad/${env}/app/web-oauth`,
         `dad/${env}/ingress/tls`,
       ]);
       for (const s of Object.values(byName) as any[]) {
