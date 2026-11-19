@@ -136,3 +136,17 @@ cd apps/dad-main
 CDK_DEFAULT_ACCOUNT=111111111111 CDK_DEFAULT_REGION=us-east-2 npx cdk synth -c env=staging
 CDK_DEFAULT_ACCOUNT=111111111111 CDK_DEFAULT_REGION=us-east-2 npx cdk synth -c env=production
 ```
+
+### Native API ingress
+
+DAD-Main's nginx serves the dedicated `api.staging.dynamicaid.org` and
+`api.dynamicaid.org` hosts using `DONOR_NATIVE_API_ORIGIN`. Only native-admitted
+contract operations reach the private API's port 8002. The API security group admits
+nginx and web service groups; port 8002 is never public. Service Connect provides
+`api:8002`, and nginx waits for that service as well as web.
+
+Before activating a native host, the owner provisions its DNS, TLS certificate and
+origin-pull policy, reviews the [Cloudflare native-host rules](cloudflare/README.md#native-api-hosts),
+and verifies Main's ingress smoke tests against the deployed host. The native apps
+use this API origin and retain the public web origin for browser links. See
+[DAD-Docs ADR 0010](https://github.com/pre-dad/DAD-Docs/blob/dev/decisions/0010-native-api-ingress.md).

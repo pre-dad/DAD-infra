@@ -382,3 +382,18 @@ describe('ServicesStack', () => {
     });
   });
 });
+
+it.each(['staging', 'production'] as const)('%s configures the native API host on nginx', env => {
+  const t = Template.fromStack(buildGraph(env).services);
+  const origin = env === 'staging'
+    ? 'https://api.staging.dynamicaid.org'
+    : 'https://api.dynamicaid.org';
+  t.hasResourceProperties('AWS::ECS::TaskDefinition', {
+    Family: 'dad-nginx',
+    ContainerDefinitions: Match.arrayWith([
+      Match.objectLike({
+        Environment: Match.arrayWith([{ Name: 'DONOR_NATIVE_API_ORIGIN', Value: origin }]),
+      }),
+    ]),
+  });
+});

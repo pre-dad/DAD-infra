@@ -275,6 +275,7 @@ export class ServicesStack extends cdk.Stack {
         INGRESS_MODE: 'cloudflare',
         DONOR_PUBLIC_ORIGIN: config.publicOrigin,
         DONOR_STAFF_ORIGIN: config.staffOrigin,
+        DONOR_NATIVE_API_ORIGIN: config.nativeApiOrigin,
         NGINX_ENVSUBST_FILTER: '^INGRESS_',
         NGINX_ENTRYPOINT_QUIET_LOGS: '1',
       },
@@ -306,11 +307,12 @@ export class ServicesStack extends cdk.Stack {
       availabilityZoneRebalancing: this.azRebalancing,
       vpcSubnets: computeSubnets,
       securityGroups: [nginxSecurityGroup],
-      // nginx is a Service Connect client only: it resolves `web` once at start.
+      // nginx resolves web and the native API through Service Connect.
       serviceConnectConfiguration: { namespace: namespaceName },
     });
     // The `web` name must exist before nginx starts, or nginx exits on an unknown upstream.
     this.services.nginx.node.addDependency(this.services.web);
+    this.services.nginx.node.addDependency(this.services.api);
 
     if (config.autoscaling.enabled) {
       this.autoscale('api', this.services.api, config.autoscaling.api);

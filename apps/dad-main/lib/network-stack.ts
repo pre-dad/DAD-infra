@@ -163,11 +163,18 @@ export class NetworkStack extends cdk.Stack {
       'web from nginx',
     );
 
-    // api accepts 8002 from web only (Service Connect web→api).
+    // Browser traffic reaches the API through the web proxy.
     this.apiSecurityGroup.addIngressRule(
       this.webSecurityGroup,
       ec2.Port.tcp(8002),
       'api from web',
+    );
+
+    // Native traffic bypasses the browser proxy but still enters through nginx.
+    this.apiSecurityGroup.addIngressRule(
+      this.nginxSecurityGroup,
+      ec2.Port.tcp(8002),
+      'native api from nginx',
     );
 
     // RDS Proxy accepts 5432 from api and workers only.

@@ -17,7 +17,7 @@ Options:
   --remove-all         define no managed rules, so apply removes every one of ours
 
 Environment:
-  EDGE_PUBLIC_HOSTS, EDGE_STAFF_HOSTS, EDGE_WEBSITE_HOSTS, EDGE_ATM_HOSTS
+  EDGE_PUBLIC_HOSTS, EDGE_STAFF_HOSTS, EDGE_NATIVE_HOSTS, EDGE_WEBSITE_HOSTS, EDGE_ATM_HOSTS
                        comma-separated hostnames in this zone; set at least one
   CLOUDFLARE_ZONE_ID   the zone to change (plan, apply)
   CLOUDFLARE_API_CREDENTIAL        API credential with Zone WAF Edit, or
@@ -50,6 +50,7 @@ export function hostsFromEnv(env) {
   return {
     public: list(env.EDGE_PUBLIC_HOSTS),
     staff: list(env.EDGE_STAFF_HOSTS),
+    native: list(env.EDGE_NATIVE_HOSTS),
     website: list(env.EDGE_WEBSITE_HOSTS),
     atm: list(env.EDGE_ATM_HOSTS),
   };

@@ -95,3 +95,11 @@ describe('getConfig', () => {
     expect(getConfig('production').interfaceEndpointsEnabled).toBe(true);
   });
 });
+
+it.each(['staging', 'production'] as const)('%s has a dedicated native API origin', env => {
+  const suffix = env === 'staging' ? 'staging.dynamicaid.org' : 'dynamicaid.org';
+  expect(getConfig(env)).toMatchObject({
+    nativeApiHost: `api.${suffix}`,
+    nativeApiOrigin: `https://api.${suffix}`,
+  });
+});
