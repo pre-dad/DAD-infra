@@ -150,3 +150,9 @@ origin-pull policy, reviews the [Cloudflare native-host rules](cloudflare/README
 and verifies Main's ingress smoke tests against the deployed host. The native apps
 use this API origin and retain the public web origin for browser links. See
 [DAD-Docs ADR 0010](https://github.com/pre-dad/DAD-Docs/blob/dev/decisions/0010-native-api-ingress.md).
+
+The staging API has 1 GiB and production API 2 GiB per task. API `GOMEMLIMIT`
+uses 75% of task memory (768/1536 MiB), leaving non-heap headroom. Reports shape
+Unicode with embedded fonts and serialize rendering within each API process; a
+representative mixed-script export peaked near 200 MiB in local verification.
+These settings are source configuration until the owner deploys them.

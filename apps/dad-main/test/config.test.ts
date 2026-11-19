@@ -79,7 +79,7 @@ describe('getConfig', () => {
       allocatedStorageGiB: 20,
       maxAllocatedStorageGiB: 200,
     });
-    expect(staging.taskSizes.api).toEqual({ cpu: 256, memoryMiB: 512 });
+    expect(staging.taskSizes.api).toEqual({ cpu: 256, memoryMiB: 1024 });
     expect(staging.containerInsights).toBe(false);
     expect(staging.flowLogTrafficType).toBe('REJECT');
 

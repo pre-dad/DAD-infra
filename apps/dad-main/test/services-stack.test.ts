@@ -31,6 +31,18 @@ describe('ServicesStack', () => {
     },
   );
 
+  it.each([['staging', '768MiB'], ['production', '1536MiB']] as const)(
+    '%s: reserves memory headroom for API report rendering', (env, limit) => {
+      const t = Template.fromStack(buildGraph(env).services);
+      t.hasResourceProperties('AWS::ECS::TaskDefinition', {
+        ContainerDefinitions: Match.arrayWith([Match.objectLike({
+          PortMappings: Match.arrayWith([Match.objectLike({ ContainerPort: 8002 })]),
+          Environment: Match.arrayWith([{ Name: 'GOMEMLIMIT', Value: limit }]),
+        })]),
+      });
+    },
+  );
+
   it('creates exactly 9 ECS services', () => {
     const t = Template.fromStack(buildGraph('staging').services);
     t.resourceCountIs('AWS::ECS::Service', 9);

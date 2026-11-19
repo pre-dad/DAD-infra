@@ -180,7 +180,7 @@ function toOrigin(host: string): string {
  * service later without changing the shape of the config.
  */
 const STAGING_TASK_SIZES: TaskSizes = {
-  api: { cpu: 256, memoryMiB: 512 },
+  api: { cpu: 256, memoryMiB: 1024 },
   web: { cpu: 512, memoryMiB: 1024 },
   nginx: { cpu: 256, memoryMiB: 512 },
   worker: { cpu: 256, memoryMiB: 512 },
