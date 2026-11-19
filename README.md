@@ -109,8 +109,9 @@ stack). Also set a repository-level variable of the same name: both pipelines re
 switch outside the Environment (a job-level `if` in `dad-main-infra.yml`, the `ci-gate`
 step in `deploy.yml`), which sees only repository variables, so the
 repository value is the on-switch and the Environment value overrides it inside the job.
-The credentialed jobs stay skipped until the repository variable is set. `atm-infra.yml`
-has no deploy jobs (the runner is held).
+The credentialed jobs stay skipped until the repository variable is set. The shared
+`synth` job validates both CDK apps; only DAD-Main has deployment jobs (the ATM runner
+is held).
 
 **The environment is the access control.** Any job in the trusted repo that runs under
 the environment can assume the role, so restrict deployments in each environment's
@@ -156,3 +157,17 @@ uses 75% of task memory (768/1536 MiB), leaving non-heap headroom. Reports shape
 Unicode with embedded fonts and serialize rendering within each API process; a
 representative mixed-script export peaked near 200 MiB in local verification.
 These settings are source configuration until the owner deploys them.
+
+## Dependency security
+
+`npm ci` installs two reproducible security replacements until upstream incorporates
+the fixes. Jest's `deepmerge` is overridden by the small MIT-licensed hardened copy
+in `vendor/deepmerge` (GHSA-gcqx-w48m-w2h4). CDK bundles `minimatch` 10.2.6, which
+npm overrides cannot replace, so the checked-in postinstall script links CDK to
+the pinned patched 11.0.1 dependency (GHSA-g3hv-75wg-m249). The script fails if the
+expected package versions change. Do not use `--ignore-scripts` for this project.
+
+Run `npm run test:security` after installation; CI runs it before CDK tests and
+synthesis. Registry/Dependabot scans may still flag CDK's original bundled version
+in its published metadata; that alert remains open until upstream ships a fixed
+bundle. The regression check verifies the version CDK actually loads.

@@ -80,11 +80,11 @@ deploy:
 TAG=$(git rev-parse HEAD)
 REGISTRY=<account-id>.dkr.ecr.us-east-2.amazonaws.com
 aws ecr get-login-password --region us-east-2 | docker login --username AWS --password-stdin "$REGISTRY"
-docker build -t "$REGISTRY/dad/api:$TAG" -f apps/donor-api/Dockerfile apps/donor-api
+docker build -t "$REGISTRY/dad/api:$TAG" -f apps/donor-api/Dockerfile .
 docker build -t "$REGISTRY/dad/web:$TAG" \
   --build-arg DONOR_PUBLIC_ORIGIN=<public origin> \
   --build-arg DONOR_STAFF_ORIGIN=<staff origin> \
-  -f apps/web/Dockerfile apps/web
+  -f apps/web/Dockerfile .
 docker build -t "$REGISTRY/dad/nginx:$TAG" deploy/nginx
 docker push "$REGISTRY/dad/api:$TAG"
 docker push "$REGISTRY/dad/web:$TAG"
@@ -131,6 +131,24 @@ aws secretsmanager put-secret-value --secret-id "dad/$ENV/app/stripe" \
   runs when the SES stack is created and every 90 days after. If the first rotation failed
   (its log group is `/dad/$ENV/smtp-rotation`), fix the cause and run
   `aws secretsmanager rotate-secret --secret-id dad/$ENV/ses/smtp`.
+
+Optional live sign-in uses two separate JSON secrets, created with empty fields:
+
+- `dad/$ENV/app/sign-in` goes to the API only: `DONOR_SMS_PROVIDER`,
+  `DONOR_SMS_ACCOUNT_ID`, `DONOR_SMS_AUTH_TOKEN`, `DONOR_SMS_FROM`, `DONOR_OIDC_MODE`,
+  `DONOR_OIDC_APPLE_CLIENT_ID`, `DONOR_OIDC_GOOGLE_CLIENT_ID`, and
+  `DONOR_OIDC_REQUIRE_NONCE`.
+- `dad/$ENV/app/web-oauth` goes to web only: `DONOR_OAUTH_APPLE_CLIENT_ID`,
+  `DONOR_OAUTH_APPLE_CLIENT_SECRET`, `DONOR_OAUTH_GOOGLE_CLIENT_ID`, and
+  `DONOR_OAUTH_GOOGLE_CLIENT_SECRET`.
+
+Keep all fields, including empty ones: ECS fails task startup if an injected JSON key
+is missing. Leave the secrets empty until provider provisioning is complete. Follow
+DAD-Main `docs/operations.md` (Phone and social sign-in; Web identity) for provider
+values, redirect URLs, and matching web/native audiences. Stubs and their test opt-in
+are not injected. Changing secret values takes effect only when replacement tasks
+start; run an owner-approved rollout after updating them. For an existing estate,
+deploy the app-secrets stack before updating services so the new secrets exist.
 
 ### 6. Deploy the maintenance stack and prepare the database
 

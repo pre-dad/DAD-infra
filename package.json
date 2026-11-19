@@ -10,7 +10,9 @@
   "scripts": {
     "build": "npm run build --workspaces --if-present",
     "test": "npm run test --workspaces --if-present",
-    "test:cloudflare": "node --test cloudflare/*.test.mjs"
+    "test:cloudflare": "node --test cloudflare/*.test.mjs",
+    "test:security": "node --test test/security.test.cjs",
+    "postinstall": "node scripts/secure-cdk-dependencies.cjs"
   },
   "devDependencies": {
     "@types/jest": "29.5.14",
@@ -19,6 +21,11 @@
     "jest": "29.7.0",
     "ts-jest": "29.4.15",
     "ts-node": "10.9.2",
-    "typescript": "5.9.3"
+    "typescript": "5.9.3",
+    "deepmerge": "file:vendor/deepmerge",
+    "minimatch": "11.0.1"
+  },
+  "overrides": {
+    "deepmerge": "$deepmerge"
   }
 }

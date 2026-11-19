@@ -11,6 +11,9 @@ these; this file only adds what they do not say.
 - Cross-repo rules live in the separate **DAD-Docs** repo: ADR 0004 (this repo is the
   single home for AWS) and ADR 0005 (platform operating standards). There is no
   CONTRIBUTING.md here.
+- **[Shared agent workflow](https://github.com/pre-dad/DAD-Docs/blob/dev/conventions/agent-workflow.md)** —
+  read DAD-Docs for skill setup, routing, and independent-review boundaries. Keep
+  shared procedures there; this guide owns repo-local commands and constraints.
 
 ## Guardrails
 

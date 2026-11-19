@@ -14,6 +14,10 @@ export interface AppSecrets {
   readonly encryption: secretsmanager.ISecret;
   /** dad/<env>/ingress/tls: INGRESS_TLS_FULLCHAIN, INGRESS_TLS_PRIVKEY. */
   readonly tls: secretsmanager.ISecret;
+  /** dad/<env>/app/sign-in: optional live SMS and OIDC API settings. */
+  readonly signIn: secretsmanager.ISecret;
+  /** dad/<env>/app/web-oauth: browser OAuth exchange credentials, web only. */
+  readonly webOAuth: secretsmanager.ISecret;
   /** dad/<env>/ses/smtp: DONOR_SMTP_HOST/PORT/USERNAME/PASSWORD, DONOR_EMAIL_FROM. */
   readonly smtp: secretsmanager.ISecret;
 }

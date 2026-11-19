@@ -13,6 +13,22 @@ export const APP_SECRET_FIELDS = {
   stripe: ['STRIPE_SECRET_KEY', 'STRIPE_WEBHOOK_SECRET'],
   encryption: ['DONOR_EMAIL_ENCRYPTION_KEY', 'DONOR_CONTENT_ENCRYPTION_KEY'],
   tls: ['INGRESS_TLS_FULLCHAIN', 'INGRESS_TLS_PRIVKEY'],
+  signIn: [
+    'DONOR_SMS_PROVIDER',
+    'DONOR_SMS_ACCOUNT_ID',
+    'DONOR_SMS_AUTH_TOKEN',
+    'DONOR_SMS_FROM',
+    'DONOR_OIDC_MODE',
+    'DONOR_OIDC_APPLE_CLIENT_ID',
+    'DONOR_OIDC_GOOGLE_CLIENT_ID',
+    'DONOR_OIDC_REQUIRE_NONCE',
+  ],
+  webOAuth: [
+    'DONOR_OAUTH_APPLE_CLIENT_ID',
+    'DONOR_OAUTH_APPLE_CLIENT_SECRET',
+    'DONOR_OAUTH_GOOGLE_CLIENT_ID',
+    'DONOR_OAUTH_GOOGLE_CLIENT_SECRET',
+  ],
 } as const;
 
 /**
@@ -36,6 +52,8 @@ export class AppSecretsStack extends cdk.Stack {
   public readonly stripe: secretsmanager.Secret;
   public readonly encryption: secretsmanager.Secret;
   public readonly tls: secretsmanager.Secret;
+  public readonly signIn: secretsmanager.Secret;
+  public readonly webOAuth: secretsmanager.Secret;
 
   constructor(scope: Construct, id: string, props: AppSecretsStackProps) {
     super(scope, id, props);
@@ -81,10 +99,25 @@ export class AppSecretsStack extends cdk.Stack {
       'nginx origin certificate chain and private key (PEM). nginx does not start without them.',
     );
 
+    this.signIn = make(
+      'SignInSecret',
+      'app/sign-in',
+      APP_SECRET_FIELDS.signIn,
+      'Optional live SMS and OIDC API settings. Empty fields keep sign-in methods off; do not configure stubs.',
+    );
+    this.webOAuth = make(
+      'WebOAuthSecret',
+      'app/web-oauth',
+      APP_SECRET_FIELDS.webOAuth,
+      'Optional browser OAuth exchange credentials. Empty fields keep browser social sign-in off.',
+    );
+
     for (const [id, s] of [
       ['StripeSecretArn', this.stripe],
       ['EncryptionSecretArn', this.encryption],
       ['IngressTlsSecretArn', this.tls],
+      ['SignInSecretArn', this.signIn],
+      ['WebOAuthSecretArn', this.webOAuth],
     ] as const) {
       new cdk.CfnOutput(this, id, { value: s.secretArn });
     }

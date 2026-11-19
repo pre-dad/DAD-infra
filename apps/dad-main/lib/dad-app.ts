@@ -71,6 +71,8 @@ export function buildDadApp(app: cdk.App, config: EnvConfig, env: cdk.Environmen
       stripe: appSecrets.stripe,
       encryption: appSecrets.encryption,
       tls: appSecrets.tls,
+      signIn: appSecrets.signIn,
+      webOAuth: appSecrets.webOAuth,
       smtp: ses.smtpSecret,
     },
   });
@@ -93,6 +95,8 @@ export function buildDadApp(app: cdk.App, config: EnvConfig, env: cdk.Environmen
       stripe: appSecrets.stripe,
       encryption: appSecrets.encryption,
       tls: appSecrets.tls,
+      signIn: appSecrets.signIn,
+      webOAuth: appSecrets.webOAuth,
       smtp: ses.smtpSecret,
     },
   });

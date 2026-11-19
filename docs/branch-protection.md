@@ -28,13 +28,33 @@ Two active rulesets exist, `protect-main` (targets `refs/heads/main`) and `prote
 
 ### Why `synth` must always run
 
-A required check that never runs blocks the merge forever. Both infra workflows
-(`atm-infra.yml`, `dad-main-infra.yml`) therefore have **no `paths:` filter on
-`pull_request`**; on every PR each runs the unit tests (`npx jest`) and an offline
-`cdk synth` of both environments. Both define a job named `synth`, and the ruleset
-requires that name. `dad-main-infra.yml`'s deploy triggers (`push` to `dev` and `main`)
-stay path-filtered; `atm-infra.yml` has none. If you rename the `synth` job, update the
-ruleset in the same change.
+A required check that never runs blocks the merge forever. The consolidated
+`dad-main-infra.yml` workflow therefore has **no `paths:` filter on `pull_request`**.
+Its single `synth` job installs/builds once, runs the full workspace and Cloudflare
+tests once, and synthesizes both `apps/dad-main` and `apps/atm` in staging and
+production without AWS credentials. The ruleset still requires `synth`.
+
+Superseded PR runs are canceled; push/manual deployment runs stay serialized without
+cancellation. Deploy triggers and credential gates remain specific to DAD-Main;
+the ATM runner is validated offline and has no deployment job. Renaming `synth`
+requires an accompanying ruleset change.
+
+## Synchronizing protected branches before a release
+
+A release merge adds a commit to `main` that is not yet on `dev`. With strict checks,
+the next `dev` → `main` PR needs that history before it can merge. GitHub's **Update
+branch** button cannot do this: it attempts a direct update to protected `dev`, which
+requires a pull request and a passing `synth` check.
+
+Use a temporary branch and worktree based on current `origin/dev`, merge current
+`origin/main` into it, then open a PR from that branch into `dev`. Wait for `synth`,
+and merge the sync PR with **Create a merge commit**. Squashing or rebasing the sync
+would discard the ancestry needed to bring `dev` up to date with `main`.
+
+The existing `dev` → `main` release PR then updates automatically and runs `synth`
+again. Wait for its new check before merging it, also with **Create a merge commit**.
+If either protected branch advances meanwhile, repeat the sync against the latest
+heads. Keep both protections enabled; this flow needs no direct push or bypass.
 
 ## Apply (one-time per branch)
 
