@@ -95,8 +95,9 @@ describe('database owner bootstrap', () => {
       expect(OWNER_BOOTSTRAP_SCRIPT).toContain('export PGSSLROOTCERT=/tmp/rds-ca.pem');
     });
 
-    it('passes passwords as psql variables, never on the command line or in SQL text', () => {
-      expect(OWNER_BOOTSTRAP_SCRIPT).toContain('-v owner_pw="$OWNER_PASSWORD"');
+    it('reads passwords from the environment, never the command line or SQL text', () => {
+      expect(OWNER_BOOTSTRAP_SCRIPT).toContain('\\getenv owner_pw OWNER_PASSWORD');
+      expect(OWNER_BOOTSTRAP_SCRIPT).not.toMatch(/-v owner_pw/);
       expect(OWNER_BOOTSTRAP_SCRIPT).toContain("PASSWORD %L', :'owner_pw'");
       // The quoted heredoc keeps the shell from expanding anything inside the SQL.
       expect(OWNER_BOOTSTRAP_SCRIPT).toContain("<<'SQL'");

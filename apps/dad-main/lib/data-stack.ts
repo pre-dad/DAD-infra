@@ -4,7 +4,8 @@ import * as ec2 from 'aws-cdk-lib/aws-ec2';
 import * as rds from 'aws-cdk-lib/aws-rds';
 import * as secretsmanager from 'aws-cdk-lib/aws-secretsmanager';
 import { EnvConfig } from './config';
-import { ALL_LOGINS, ProcessLogin } from './db-url';
+import { ALL_LOGINS } from './db-url';
+import { DAILY_RETENTION_DAYS } from './backup-stack';
 
 /** Props for {@link DataStack}. */
 export interface DataStackProps extends cdk.StackProps {
@@ -127,7 +128,7 @@ export class DataStack extends cdk.Stack {
       enablePerformanceInsights: true,
       cloudwatchLogsExports: ['postgresql'],
       // Automated backups (these also provide point-in-time recovery).
-      backupRetention: cdk.Duration.days(config.multiAz ? 14 : 7),
+      backupRetention: cdk.Duration.days(config.multiAz ? DAILY_RETENTION_DAYS : 7),
       deletionProtection: config.deletionProtection,
       databaseName: config.dbName,
       // Master credentials in Secrets Manager (used for the owner bootstrap).
@@ -141,7 +142,7 @@ export class DataStack extends cdk.Stack {
     // these secrets just hold the generated passwords the roles will be given.
     this.loginSecrets = {};
     const proxySecrets: secretsmanager.ISecret[] = [];
-    for (const login of ALL_LOGINS as ProcessLogin[]) {
+    for (const login of ALL_LOGINS) {
       const secret = new secretsmanager.Secret(
         this,
         `LoginSecret-${login.login}`,
@@ -174,8 +175,8 @@ export class DataStack extends cdk.Stack {
       securityGroups: [proxySecurityGroup],
       requireTLS: true,
       iamAuth: false,
-      // Transaction pooling: required so default_query_exec_mode=exec works.
-      // Session pinning stays off the hot path; pgx uses simple protocol.
+      // The proxy multiplexes in transaction mode; pgx runs in exec mode, so sessions are
+      // not pinned.
       maxConnectionsPercent: 90,
       borrowTimeout: cdk.Duration.seconds(30),
       dbProxyName: `dad-${config.env}-proxy`,
@@ -195,7 +196,7 @@ export class DataStack extends cdk.Stack {
       value: this.masterSecret.secretArn,
       description: 'RDS master credentials secret ARN (owner bootstrap).',
     });
-    for (const login of ALL_LOGINS as ProcessLogin[]) {
+    for (const login of ALL_LOGINS) {
       new cdk.CfnOutput(this, `SecretArn-${login.login}`, {
         value: this.loginSecrets[login.login].secretArn,
         description: `Secret ARN for DB login '${login.login}' (${login.envVar}).`,

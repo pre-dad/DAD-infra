@@ -120,6 +120,22 @@ describe('cross-region database backups', () => {
     });
   });
 
+  it('limits the backup role to the destination key by alias', () => {
+    const t = Template.fromStack(buildGraph('production').backup!);
+    t.hasResourceProperties('AWS::IAM::Policy', {
+      PolicyDocument: {
+        Statement: Match.arrayWith([
+          Match.objectLike({
+            Sid: 'UseDestinationVaultKey',
+            Condition: {
+              'ForAnyValue:StringEquals': { 'kms:ResourceAliases': 'alias/dad-production-dr-backup' },
+            },
+          }),
+        ]),
+      },
+    });
+  });
+
   it('selects only the database and uses a role only AWS Backup can assume', () => {
     const t = Template.fromStack(buildGraph('production').backup!);
     t.resourceCountIs('AWS::Backup::BackupSelection', 1);

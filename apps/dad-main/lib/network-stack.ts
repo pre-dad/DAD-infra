@@ -33,7 +33,7 @@ export class NetworkStack extends cdk.Stack {
   /** The dedicated VPC for this environment. */
   public readonly vpc: ec2.Vpc;
 
-  /** SG applied to the internet-facing NLB target ENIs path (nginx tier edge). */
+  /** SG for the internet-facing NLB (edge path in front of the nginx tier). */
   public readonly nlbSecurityGroup: ec2.SecurityGroup;
   /** SG for the nginx (edge ingress) service. */
   public readonly nginxSecurityGroup: ec2.SecurityGroup;
