@@ -65,7 +65,7 @@ From the AWS Organization (SSO access portal):
 | `production`     | `216833405626` | `-c env=production` deploy target.                 |
 | `sandbox`        | `853377042897` | `-c env=staging` deploy target.                    |
 
-Region is **us-east-2 (Ohio)** for everything, matching DAD-Main.
+Region is **us-east-2 (Ohio)**, matching DAD-Main, plus us-west-2 for the production DR backup vault.
 
 Environment selection mirrors DAD-Main exactly: `-c env=staging|production`
 (default `staging`), account/region resolved from a typed config, with
@@ -102,7 +102,7 @@ infra repo is scoped deliberately rather than "everything DAD."
 
 ---
 
-## 4. Proposed repository layout
+## 4. Repository layout
 
 One repo, one shared config/pipeline core, one CDK app per tenant, CI path-filtered
 so a change to one tenant does not synth the other.
@@ -207,6 +207,61 @@ not mistaken for inconsistency.
   bucket prefix, and read/conditional-write the DynamoDB table — nothing else.
   The scheduler's role is allowed only `codebuild:StartBuild` on the project.
 
+### 6.3 Finding-ledger decision — DynamoDB
+
+**Decision: DynamoDB for the finding ledger; S3 for evidence.**
+
+ATM's value is cross-run, concurrency-safe finding accumulation: findings are
+grouped by `(source repo, check, normalized error signature)`, they block across
+runs (including historical and other branches), a resolved finding reopens when
+its signature recurs, and triage keeps an assessment history. That is a keyed,
+mutable, read-modify-write record set.
+
+- **Concurrency:** commit-triggered runs can finish near-simultaneously and both
+  update the ledger. DynamoDB conditional writes give safe optimistic concurrency
+  for free; an S3 "ledger file" would need hand-built locking/versioning, and
+  ATM's local single-writer lock does not translate to ephemeral runners.
+- **Query pattern:** "unresolved blocking findings for this source repo" is a
+  key/GSI lookup in DynamoDB vs. download-and-scan in S3.
+- **Future B:** a hosted dashboard wants a queryable store, not a JSON blob to
+  pull and parse. DynamoDB is the same store A writes and B later reads.
+
+Sketch schema (to be finalized during implementation):
+
+- **PK** = `source#<repo>` · **SK** = `finding#<normalized-signature>`
+- Attributes: `check`, `severity`, `status` (unassessed/confirmed/resolved/dismissed/reopened),
+  `firstSeenRunId`, `lastSeenRunId`, `assessmentHistory[]`, `reproCommand`.
+- **GSI** on `status` (or `severity`) per source for the "blocking findings" query.
+- Writes use conditional expressions for reopen-on-recurrence and
+  resolve/dismiss transitions.
+
+Split restated: **DynamoDB = ledger** (small, mutable, concurrent);
+**S3 = evidence** (bulky, immutable, hashed). Mirrors DAD-Main's RDS-vs-everything
+separation of mutable state from artifacts.
+
+### 6.4 The storage-decoupling problem and the v1 call
+
+ATM today writes history to a **single-writer local filesystem** under
+`.atm/runs/`, bound to an absolute repo path and guarded by a lock. That model
+does not survive on ephemeral CodeBuild. Two ways to bridge it:
+
+1. **Native cloud backend inside ATM** — teach ATM an S3/DynamoDB history +
+   ledger backend. Correct long-term, but a real change to ATM's core storage
+   layer.
+2. **Thin post-run sync wrapper** — run ATM unchanged on the CodeBuild host,
+   then a post-run step uploads evidence to S3 and reconciles the local finding
+   ledger into DynamoDB with conditional writes.
+
+**Decision for v1: the thin post-run wrapper.** It ships A without rewriting
+ATM's storage layer, keeps the infra work and the ATM-core work decoupled, and
+still makes the right long-term storage choice (S3 + DynamoDB). A native backend
+inside ATM is a later increment once the shape is proven.
+
+Honest caveat: even the wrapper is **a code change that lives in the atm repo**
+(a new post-run sync script + the buildspec that calls it), not pure IaC. The
+implementation plan tracks it as an atm-repo item distinct from the DAD-infra
+CDK items.
+
 ### 6.5 Trigger and source acquisition — scheduled runs; CI-triggered runs deferred
 
 > **Status (2026-10-29): held, not deployed.** DAD-Main's ATM acceptance gate and its
@@ -264,60 +319,6 @@ CodeBuild (privileged Docker)
   → exit with ATM's code
 ```
 
-### 6.3 Finding-ledger decision — DynamoDB
-
-**Decision: DynamoDB for the finding ledger; S3 for evidence.**
-
-ATM's value is cross-run, concurrency-safe finding accumulation: findings are
-grouped by `(source repo, check, normalized error signature)`, they block across
-runs (including historical and other branches), a resolved finding reopens when
-its signature recurs, and triage keeps an assessment history. That is a keyed,
-mutable, read-modify-write record set.
-
-- **Concurrency:** commit-triggered runs can finish near-simultaneously and both
-  update the ledger. DynamoDB conditional writes give safe optimistic concurrency
-  for free; an S3 "ledger file" would need hand-built locking/versioning, and
-  ATM's local single-writer lock does not translate to ephemeral runners.
-- **Query pattern:** "unresolved blocking findings for this source repo" is a
-  key/GSI lookup in DynamoDB vs. download-and-scan in S3.
-- **Future B:** a hosted dashboard wants a queryable store, not a JSON blob to
-  pull and parse. DynamoDB is the same store A writes and B later reads.
-
-Sketch schema (to be finalized during implementation):
-
-- **PK** = `source#<repo>` · **SK** = `finding#<normalized-signature>`
-- Attributes: `check`, `severity`, `status` (unassessed/confirmed/resolved/dismissed/reopened),
-  `firstSeenRunId`, `lastSeenRunId`, `assessmentHistory[]`, `reproCommand`.
-- **GSI** on `status` (or `severity`) per source for the "blocking findings" query.
-- Writes use conditional expressions for reopen-on-recurrence and
-  resolve/dismiss transitions.
-
-Split restated: **DynamoDB = ledger** (small, mutable, concurrent);
-**S3 = evidence** (bulky, immutable, hashed). Mirrors DAD-Main's RDS-vs-everything
-separation of mutable state from artifacts.
-
-### 6.4 The storage-decoupling problem and the v1 call
-
-ATM today writes history to a **single-writer local filesystem** under
-`.atm/runs/`, bound to an absolute repo path and guarded by a lock. That model
-does not survive on ephemeral CodeBuild. Two ways to bridge it:
-
-1. **Native cloud backend inside ATM** — teach ATM an S3/DynamoDB history +
-   ledger backend. Correct long-term, but a real change to ATM's core storage
-   layer.
-2. **Thin post-run sync wrapper** — run ATM unchanged on the CodeBuild host,
-   then a post-run step uploads evidence to S3 and reconciles the local finding
-   ledger into DynamoDB with conditional writes.
-
-**Decision for v1: the thin post-run wrapper.** It ships A without rewriting
-ATM's storage layer, keeps the infra work and the ATM-core work decoupled, and
-still makes the right long-term storage choice (S3 + DynamoDB). A native backend
-inside ATM is a later increment once the shape is proven.
-
-Honest caveat: even the wrapper is **a code change that lives in the atm repo**
-(a new post-run sync script + the buildspec that calls it), not pure IaC. The
-implementation plan tracks it as an atm-repo item distinct from the DAD-infra
-CDK items.
 
 ---
 
@@ -344,8 +345,8 @@ The extraction is complete: DAD-Main's CDK app is `apps/dad-main`.
 
 ## 8. Security and cost posture
 
-- **No deploy until the team is ready.** The estate stays offline-verified and
-  parked to avoid AWS charges, exactly as DAD-Main's infra is today.
+- **Deploys are owner-approved.** The estate is built and verified offline; nothing
+  deploys until the owner runs the steps in [bootstrap.md](../bootstrap.md).
 - **Least privilege.** CodeBuild's role is scoped to its own S3 prefix, its
   DynamoDB table, and its named secrets. No broad `*` on data stores.
 - **Evidence is private.** Bucket has Block Public Access, SSE, and lifecycle
@@ -353,7 +354,7 @@ The extraction is complete: DAD-Main's CDK app is `apps/dad-main`.
   session cookies in traces). No public report hosting in v1.
 - **AI keys isolated.** Provider keys live in Secrets Manager, enter the runner
   only when AI is explicitly enabled, and never reach application containers.
-- **Cost controls to decide at implementation:** CodeBuild compute size + build
+- **Cost controls (open, see §10):** CodeBuild compute size + build
   timeout, S3 lifecycle expiry window, DynamoDB on-demand vs. provisioned
   (on-demand likely, given spiky commit-triggered load).
 
@@ -392,6 +393,8 @@ ledger decision in ADR 0006.
    writes make the ledger concurrency-safe. (§6.3)
 
 ### Still open
+
+Items 4, 5 and 7 are open pending an owner decision; none blocks the build.
 
 4. **"DAAD-website" spelling.** Confirm the double-A is intentional and not a typo
    of the "DAD-" prefix used everywhere else.

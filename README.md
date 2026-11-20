@@ -131,7 +131,7 @@ runs the same tests and synth on every PR.
 npm ci
 npm run test:security
 npm run build
-npx jest   # all workspaces; also runs the rotation function's Python tests (needs python3)
+npx jest --ci --maxWorkers=2 --workerIdleMemoryLimit=1024MB   # all workspaces; also runs the rotation function's Python tests (needs python3)
 npm run test:cloudflare
 
 # per-app offline synth (dummy account/region), for apps/dad-main and apps/atm
