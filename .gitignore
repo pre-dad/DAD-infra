@@ -5,6 +5,8 @@ dist/
 *.d.ts
 cdk.out/
 cdk.context.json
+.env
+.env.*
 .agents/
 .DS_Store
 __pycache__/
