@@ -16,6 +16,13 @@ export interface DataStackProps extends cdk.StackProps {
   readonly isolatedSubnets: ec2.SubnetSelection;
   /** SG for the RDS Proxy (owned by the network stack). */
   readonly proxySecurityGroup: ec2.ISecurityGroup;
+  /**
+   * SG of the interface VPC endpoints, when the environment has them. The bootstrap task
+   * runs in the compute subnets and pulls its image, reads secrets and writes logs through
+   * those endpoints, so its SG must be allowed in. The rule is created here, not in the
+   * network stack, because the bootstrap SG lives here.
+   */
+  readonly endpointSecurityGroup?: ec2.ISecurityGroup;
 }
 
 /**
@@ -79,6 +86,17 @@ export class DataStack extends cdk.Stack {
       ec2.Port.tcp(5432),
       'rds from the owner bootstrap task',
     );
+
+    if (props.endpointSecurityGroup) {
+      new ec2.CfnSecurityGroupIngress(this, 'BootstrapToEndpoints', {
+        groupId: props.endpointSecurityGroup.securityGroupId,
+        sourceSecurityGroupId: this.bootstrapSecurityGroup.securityGroupId,
+        ipProtocol: 'tcp',
+        fromPort: 443,
+        toPort: 443,
+        description: 'HTTPS from the owner bootstrap task',
+      });
+    }
 
     const removalPolicy = config.deletionProtection
       ? cdk.RemovalPolicy.RETAIN

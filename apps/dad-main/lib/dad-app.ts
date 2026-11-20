@@ -36,6 +36,7 @@ export function buildDadApp(app: cdk.App, config: EnvConfig, env: cdk.Environmen
     vpc: network.vpc,
     isolatedSubnets: network.isolatedSubnets,
     proxySecurityGroup: network.proxySecurityGroup,
+    endpointSecurityGroup: network.endpointSecurityGroup,
   });
 
   // 3. ECS cluster — Fargate cluster, Service Connect namespace, ECR, log groups.
