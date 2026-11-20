@@ -148,11 +148,19 @@ export function buildDefinition({ tier, hosts = {} }) {
     throw new Error("no hosts given: set at least one of the EDGE_*_HOSTS variables");
   }
   const donorHosts = [...publicHosts, ...staffHosts];
-  if (nativeHosts.some(host => donorHosts.includes(host) || website.includes(host) || atm.includes(host))) {
+  if (nativeHosts.some((host) => donorHosts.includes(host) || website.includes(host) || atm.includes(host))) {
     throw new Error("native API hosts must be separate from browser hosts");
   }
-  const nativeAuthPaths = AUTH_PATHS.filter(path => !path.startsWith("/api/donor/staff/")).map(path => path.slice(4));
-  const nativeVisitorPaths = VISITOR_PATHS.filter(path => path !== "/api/donor/checkouts").map(path => path.slice(4));
+  const roles = { public: publicHosts, staff: staffHosts, website, atm, native: nativeHosts };
+  const seen = new Map();
+  for (const [role, list] of Object.entries(roles)) {
+    for (const host of list) {
+      if (seen.has(host) && seen.get(host) !== role) throw new Error(`host "${host}" is listed for both ${seen.get(host)} and ${role}`);
+      seen.set(host, role);
+    }
+  }
+  const nativeAuthPaths = AUTH_PATHS.filter((path) => !path.startsWith("/api/donor/staff/")).map((path) => path.slice(4));
+  const nativeVisitorPaths = VISITOR_PATHS.filter((path) => path !== "/api/donor/checkouts").map((path) => path.slice(4));
   const scopedPaths = (browserHosts, browserPaths, nativePaths) => {
     const alternatives = [];
     if (browserHosts.length) alternatives.push(`(${and([hostClause(browserHosts, tier), pathMatch(browserPaths)])})`);
@@ -186,7 +194,7 @@ export function buildDefinition({ tier, hosts = {} }) {
           methodClause("POST", tier),
           scopedPaths(publicHosts,
             { exact: VISITOR_PATHS, prefixes: VISITOR_PREFIXES },
-            { exact: nativeVisitorPaths, prefixes: VISITOR_PREFIXES.map(path => path.slice(4)) }),
+            { exact: nativeVisitorPaths, prefixes: VISITOR_PREFIXES.map((path) => path.slice(4)) }),
           excluded(),
         ]),
         tier,
