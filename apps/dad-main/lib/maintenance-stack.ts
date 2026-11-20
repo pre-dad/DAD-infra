@@ -27,6 +27,7 @@ import {
   databaseConnection,
   DatabaseConnection,
   secretFields,
+  STRIPE_REQUESTS_PER_SECOND,
   TaskFactory,
 } from './task-factory';
 
@@ -163,7 +164,7 @@ export class MaintenanceStack extends cdk.Stack {
     const reconcileTask = defineTask(
       'reconcile',
       ['reconcile'],
-      { DONOR_STRIPE_REQUESTS_PER_SECOND: '25', ...reconcileDb.environment },
+      { DONOR_STRIPE_REQUESTS_PER_SECOND: STRIPE_REQUESTS_PER_SECOND, ...reconcileDb.environment },
       { ...reconcileDb.secrets, ...secretFields(appSecrets.stripe, ['STRIPE_SECRET_KEY']) },
     );
 

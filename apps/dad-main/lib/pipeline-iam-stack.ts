@@ -7,6 +7,7 @@ import {
 } from '@dad-infra/pipeline-iam';
 import { EnvConfig } from './config';
 import { clusterNameFor } from './ecs-cluster-stack';
+import { imageTagParameterName } from './image-tag';
 
 /** The repo whose workflow runs `cdk deploy` for this app (dad-main-infra.yml). */
 export const DAD_INFRA_REPO = 'pre-dad/DAD-infra';
@@ -187,7 +188,7 @@ export class PipelineIamStack extends cdk.Stack {
         sid: 'RecordImageTag',
         actions: ['ssm:PutParameter'],
         resources: [
-          `arn:aws:ssm:${config.region}:${config.account}:parameter/dad/${config.env}/image-tag`,
+          `arn:aws:ssm:${config.region}:${config.account}:parameter${imageTagParameterName(config.env)}`,
         ],
       }),
     );
