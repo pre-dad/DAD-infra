@@ -52,8 +52,8 @@ interface WorkerSpec {
  * api, web, nginx, and the six workers. Each is built through the shared
  * {@link TaskFactory}. The api is registered in Service Connect as `api` so web
  * resolves `http://api:8002`, and web as `web` so nginx resolves its `web:3000`
- * upstream; the SG chain (from the network stack) restricts api:8002 to the web
- * tier and web:3000 to nginx.
+ * upstream; the SG chain (from the network stack) restricts api:8002 to the web and nginx
+ * tiers and web:3000 to nginx.
  */
 export class ServicesStack extends cdk.Stack {
   public readonly services: Record<ServiceName, ecs.FargateService>;
@@ -168,6 +168,8 @@ export class ServicesStack extends cdk.Stack {
       // image default CMD is `api`.
       environment: {
         DONOR_GO_LISTEN: '0.0.0.0:8002',
+        // Leave headroom outside the Go heap for concurrent identity work and PDF shaping.
+        GOMEMLIMIT: `${Math.floor(config.taskSizes.api.memoryMiB * 0.75)}MiB`,
         DONOR_PUBLIC_ORIGIN: config.publicOrigin,
         DONOR_STAFF_ORIGIN: config.staffOrigin,
         DONOR_TRUSTED_PROXY_CIDRS: trustedProxyCidrs,
@@ -278,6 +280,7 @@ export class ServicesStack extends cdk.Stack {
         INGRESS_MODE: 'cloudflare',
         DONOR_PUBLIC_ORIGIN: config.publicOrigin,
         DONOR_STAFF_ORIGIN: config.staffOrigin,
+        DONOR_NATIVE_API_ORIGIN: config.nativeApiOrigin,
         NGINX_ENVSUBST_FILTER: '^INGRESS_',
         NGINX_ENTRYPOINT_QUIET_LOGS: '1',
       },
@@ -309,11 +312,12 @@ export class ServicesStack extends cdk.Stack {
       availabilityZoneRebalancing: this.azRebalancing,
       vpcSubnets: computeSubnets,
       securityGroups: [nginxSecurityGroup],
-      // nginx is a Service Connect client only: it resolves `web` once at start.
+      // nginx resolves web and the native API through Service Connect.
       serviceConnectConfiguration: { namespace: namespaceName },
     });
     // The `web` name must exist before nginx starts, or nginx exits on an unknown upstream.
     this.services.nginx.node.addDependency(this.services.web);
+    this.services.nginx.node.addDependency(this.services.api);
 
     if (config.autoscaling.enabled) {
       this.autoscale('api', this.services.api, config.autoscaling.api);

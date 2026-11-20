@@ -250,3 +250,34 @@ test("API errors surface with the Cloudflare message", async () => {
   const fetchImpl = async () => ({ status: 403, json: async () => ({ success: false, errors: [{ code: 10000, message: "Authentication error" }] }) });
   await assert.rejects(run(["plan", "--tier", "pro"], { env: ENV, fetchImpl, out: () => {} }), /HTTP 403.*Authentication error/);
 });
+
+test("native API hosts share auth and visitor edge budgets without browser challenges", () => {
+  const native = "api.donors.example.org";
+  const definition = buildDefinition({ tier: "business", hosts: { ...HOSTS, native: [native] } });
+  const rates = definition.phases[PHASE_RATE_LIMIT];
+  const auth = rates.find(rule => rule.ref.endsWith("donor-auth"));
+  assert.ok(auth.expression.includes(`"${native}"`));
+  assert.ok(auth.expression.includes('"/donor/login"'));
+  const visitor = rates.find(rule => rule.ref.endsWith("donor-visitor"));
+  assert.ok(visitor.expression.includes(`"${native}"`));
+  assert.ok(visitor.expression.includes('"/donor/partner/applications"'));
+  assert.ok(!rates.find(rule => rule.ref.endsWith("donor-pages")).expression.includes(`"${native}"`));
+  const skip = definition.phases[PHASE_CUSTOM].find(rule => rule.ref.endsWith("skip-native-bot-challenge"));
+  assert.equal(skip.action, "skip");
+  assert.deepEqual(skip.action_parameters.phases, ["http_request_sbfm"]);
+  assert.equal(skip.action_parameters.ruleset, undefined);
+});
+test("a native-only zone gets its own bounded definition", () => {
+  const definition = buildDefinition({tier:"pro", hosts:{native:["api.example.org"]}});
+  assert.equal(definition.phases[PHASE_RATE_LIMIT].length, 2);
+});
+
+test("native routing is explicit in environment configuration and cannot overlap browser hosts", async () => {
+  const { phases } = await run(["render", "--tier", "pro"], {
+    env: { EDGE_NATIVE_HOSTS: "api.example.org" },
+    fetchImpl: () => assert.fail("render must stay offline"),
+    out: () => {},
+  });
+  assert.ok(phases[PHASE_RATE_LIMIT].every(rule => rule.expression.includes('"api.example.org"')));
+  assert.throws(() => buildDefinition({ tier: "pro", hosts: { public: ["same.org"], native: ["same.org"] } }), /separate/);
+});

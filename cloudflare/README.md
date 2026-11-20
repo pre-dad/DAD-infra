@@ -1,14 +1,13 @@
 # Cloudflare edge rules
 
-Rate limits and two custom firewall rules for the DAD hostnames, declared in
+Rate limits and custom firewall rules for the DAD hostnames, declared in
 [`definition.mjs`](definition.mjs) and applied with [`apply.mjs`](apply.mjs) through the
 Cloudflare Rulesets API. No Terraform and no dependencies: Node 20+ and its built-in
 `fetch`. Nothing here runs from CI against Cloudflare; the zone owner applies it.
 
 ## Why
 
-The DAD-Main API limits requests in memory, per task, so every task the service scales to
-multiplies the effective limit. nginx adds a per-client backstop per ingress task, and
+The DAD-Main API uses shared PostgreSQL rate budgets across tasks. nginx adds a per-client backstop per ingress task, and
 the ATM ledger Worker has one global bucket checked before authentication. Cloudflare
 counts per client IP across all of them. Each edge limit sits a little above the layer
 behind it, so the app's own limit (with its exact `Retry-After`) stays the one a
@@ -23,8 +22,8 @@ Enterprise). Blocked requests get `429 {"detail":"Too many requests"}`.
 
 | Ref (`dad-edge-…`) | Host | Paths | Threshold | Action | Why | Plan |
 | --- | --- | --- | --- | --- | --- | --- |
-| `donor-auth` | public + staff | the sign-in, claim, activation and `/options` endpoints, and `/api/donor/oidc/*/sign-in` | Pro+: 30 / 60 s, block 10 min. Free: 5 / 10 s, block 10 s | block | API allows 10/min per task, nginx 20/min | Free (rule 1) |
-| `donor-visitor` | public | `/api/donor/checkouts`, `/public/partner-apply`, `/partner/applications`, `/referrals/*`, `/company/*` | 240 / 60 s, block 1 min | block | API 60/min per task, nginx 120/min | Pro |
+| `donor-auth` | public + staff + native | the sign-in, claim, activation and `/options` endpoints, and `/api/donor/oidc/*/sign-in` | Pro+: 30 / 60 s, block 10 min. Free: 5 / 10 s, block 10 s | block | API allows 10/min, nginx 20/min | Free (rule 1) |
+| `donor-visitor` | public + native | `/api/donor/checkouts`, `/public/partner-apply`, `/partner/applications`, `/referrals/*`, `/company/*` | 240 / 60 s, block 1 min | block | API 60/min, nginx 120/min | Pro |
 | `website-forms` | website | `/api/submit.php` | Free: 5 / 10 s. Pro: 15 / 60 s, block 10 min. Business: 25 / 10 min, block 1 h. Enterprise: 15 / 1 h, block 1 h | block | PHP allows 10 per hour per IP | Free |
 | `atm-ledger` | ATM | everything | Free: 20 / 10 s. Pro+: 120 / 60 s, block 1 min | block | Worker bucket is 60/min, global | Free |
 | `donor-pages` | public | everything except `/api/*` and `/_next/static/*` | 1,200 / 60 s | managed challenge | flood of uncached renders | Business |
@@ -64,6 +63,7 @@ limiting rules by position and managed rules go first here.
 ```sh
 export EDGE_PUBLIC_HOSTS=donors.example.org        # comma-separated; set the hosts in this zone
 export EDGE_STAFF_HOSTS=staff.donors.example.org
+export EDGE_NATIVE_HOSTS=api.donors.example.org    # optional; distinct native API host
 export EDGE_WEBSITE_HOSTS=dynamicaid.org           # optional
 export EDGE_ATM_HOSTS=ledger.example.org           # optional, see below
 export CLOUDFLARE_ZONE_ID=0123456789abcdef0123456789abcdef
@@ -128,3 +128,14 @@ npm run test:cloudflare
 Runs `node --test cloudflare/*.test.mjs` with a mocked `fetch`: expression sanity, the webhook and
 health exclusions, the threshold table above, plan tiers, request bodies, unmanaged rule
 preservation, idempotency, and the refusal without `--apply`.
+
+### Native API hosts
+
+Set `EDGE_NATIVE_HOSTS` for the same distinct host configured as Main's
+`DONOR_NATIVE_API_ORIGIN`. Auth and visitor rules include the corresponding direct
+`/donor/*` paths on this host; browser paths keep their `/api` prefix. Native hosts
+never enter the page challenge rule. The native custom skip rule skips only Super
+Bot Fight Mode; managed WAF, custom security rules and rate limits remain active.
+Do not add an interactive challenge on this host. Free Bot Fight Mode cannot be
+skipped, so leave it disabled for a zone serving native API traffic. The zone owner
+must review and apply the rendered rules before activating the hostname.

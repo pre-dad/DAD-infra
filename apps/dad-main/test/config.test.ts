@@ -79,7 +79,7 @@ describe('getConfig', () => {
       allocatedStorageGiB: 20,
       maxAllocatedStorageGiB: 200,
     });
-    expect(staging.taskSizes.api).toEqual({ cpu: 256, memoryMiB: 512 });
+    expect(staging.taskSizes.api).toEqual({ cpu: 256, memoryMiB: 1024 });
     expect(staging.containerInsights).toBe(false);
     expect(staging.flowLogTrafficType).toBe('REJECT');
 
@@ -93,5 +93,13 @@ describe('getConfig', () => {
   it('keeps the interface endpoints off in staging and on in production', () => {
     expect(getConfig('staging').interfaceEndpointsEnabled).toBe(false);
     expect(getConfig('production').interfaceEndpointsEnabled).toBe(true);
+  });
+});
+
+it.each(['staging', 'production'] as const)('%s has a dedicated native API origin', env => {
+  const suffix = env === 'staging' ? 'staging.dynamicaid.org' : 'dynamicaid.org';
+  expect(getConfig(env)).toMatchObject({
+    nativeApiHost: `api.${suffix}`,
+    nativeApiOrigin: `https://api.${suffix}`,
   });
 });

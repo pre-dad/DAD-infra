@@ -166,3 +166,21 @@ describe('NetworkStack', () => {
     });
   });
 });
+
+it('admits the native ingress to the API without exposing its port publicly', () => {
+  const t = synth('staging');
+  const groups = Object.entries(t.findResources('AWS::EC2::SecurityGroup'));
+  const id = (description: string) =>
+    groups.find(([, resource]) => resource.Properties.GroupDescription === description)?.[0];
+  t.hasResourceProperties('AWS::EC2::SecurityGroupIngress', {
+    GroupId: { 'Fn::GetAtt': [id('DAD api service.'), 'GroupId'] },
+    SourceSecurityGroupId: { 'Fn::GetAtt': [id('DAD nginx ingress service.'), 'GroupId'] },
+    IpProtocol: 'tcp',
+    FromPort: 8002,
+    ToPort: 8002,
+  });
+  const apiRules = Object.values(t.findResources('AWS::EC2::SecurityGroupIngress'))
+    .filter(rule => JSON.stringify(rule.Properties.GroupId).includes(id('DAD api service.') ?? 'NO_API'));
+  expect(apiRules.every(rule =>
+    rule.Properties.CidrIp === undefined && rule.Properties.CidrIpv6 === undefined)).toBe(true);
+});

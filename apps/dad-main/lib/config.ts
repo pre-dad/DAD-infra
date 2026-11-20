@@ -99,6 +99,9 @@ export interface EnvConfig extends SharedEnvConfig {
   readonly publicOrigin: string;
   /** Staff origin: https:// + staffHost, lowercase, no trailing slash. */
   readonly staffOrigin: string;
+  /** Dedicated native-only API TLS origin. */
+  readonly nativeApiHost: string;
+  readonly nativeApiOrigin: string;
   /** PostgreSQL database name. Defaults to `dad`. */
   readonly dbName: string;
   /** Whether RDS runs Multi-AZ. */
@@ -177,7 +180,7 @@ function toOrigin(host: string): string {
  * service later without changing the shape of the config.
  */
 const STAGING_TASK_SIZES: TaskSizes = {
-  api: { cpu: 256, memoryMiB: 512 },
+  api: { cpu: 256, memoryMiB: 1024 },
   web: { cpu: 512, memoryMiB: 1024 },
   nginx: { cpu: 256, memoryMiB: 512 },
   worker: { cpu: 256, memoryMiB: 512 },
@@ -222,6 +225,8 @@ const STAGING: AppFields = {
   staffHost: 'staff.staging.dynamicaid.org',
   publicOrigin: toOrigin('app.staging.dynamicaid.org'),
   staffOrigin: toOrigin('staff.staging.dynamicaid.org'),
+  nativeApiHost: 'api.staging.dynamicaid.org',
+  nativeApiOrigin: toOrigin('api.staging.dynamicaid.org'),
   dbName: DEFAULT_DB_NAME,
   multiAz: false,
   deletionProtection: false,
@@ -246,6 +251,8 @@ const PRODUCTION: AppFields = {
   staffHost: 'staff.dynamicaid.org',
   publicOrigin: toOrigin('app.dynamicaid.org'),
   staffOrigin: toOrigin('staff.dynamicaid.org'),
+  nativeApiHost: 'api.dynamicaid.org',
+  nativeApiOrigin: toOrigin('api.dynamicaid.org'),
   dbName: DEFAULT_DB_NAME,
   multiAz: true,
   deletionProtection: true,
