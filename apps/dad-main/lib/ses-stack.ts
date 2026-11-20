@@ -18,8 +18,10 @@ export interface SesStackProps extends cdk.StackProps {
  * SesStack.
  *
  * An SES domain identity for config.sendingSubdomain with Easy DKIM enabled, an
- * IAM user whose only permission is `ses:SendRawEmail` (SMTP sending), and a
- * Secrets Manager secret holding the DONOR_SMTP_* values. CfnOutputs surface the
+ * IAM user whose only permission is `ses:SendRawEmail` (all the SMTP interface
+ * needs), limited to one From address, and a Secrets Manager secret holding the
+ * DONOR_SMTP_* values. Bounce and complaint handling (a configuration set with an
+ * SNS destination) is not provisioned here. CfnOutputs surface the
  * DKIM/verification DNS records the operator adds in Cloudflare, plus a
  * sandbox-mode reminder.
  *
@@ -52,7 +54,7 @@ export class SesStack extends cdk.Stack {
     });
     this.smtpUser.addToPolicy(
       new iam.PolicyStatement({
-        actions: ['ses:SendRawEmail', 'ses:SendEmail'],
+        actions: ['ses:SendRawEmail'],
         resources: ['*'],
         conditions: {
           StringEquals: { 'ses:FromAddress': `no-reply@${subdomain}` },
@@ -105,6 +107,9 @@ export class SesStack extends cdk.Stack {
       logGroup: new logs.LogGroup(this, 'SmtpRotationLogs', {
         logGroupName: `/dad/${config.env}/smtp-rotation`,
         retention: toRetentionDays(config.logRetentionDays),
+        removalPolicy: config.deletionProtection
+          ? cdk.RemovalPolicy.RETAIN
+          : cdk.RemovalPolicy.DESTROY,
       }),
     });
     this.rotationFunction.addToRolePolicy(

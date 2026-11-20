@@ -105,28 +105,20 @@ describe('application secrets', () => {
   it('reads each secret field from the right Secrets Manager secret', () => {
     const t = Template.fromStack(buildGraph('staging').services);
     const defs = t.findResources('AWS::ECS::TaskDefinition') as Record<string, Def>;
-    const api = Object.values(defs).find((d) => d.Properties.Family === 'dad-api');
-    const byName = Object.fromEntries(
-      (api?.Properties.ContainerDefinitions[0].Secrets as Array<{ Name: string; ValueFrom: unknown }>).map((s) => [
-        s.Name,
-        JSON.stringify(s.ValueFrom),
-      ]),
-    );
+    const secretSources = (family: string) => {
+      const def = Object.values(defs).find((d) => d.Properties.Family === family);
+      const secrets = def?.Properties.ContainerDefinitions[0].Secrets as Array<{ Name: string; ValueFrom: unknown }>;
+      return Object.fromEntries(secrets.map((s) => [s.Name, JSON.stringify(s.ValueFrom)]));
+    };
+    const api = secretSources('dad-api');
     // ValueFrom is "<secret arn>:<json field>::"; the export name identifies the stack.
-    expect(byName.STRIPE_WEBHOOK_SECRET).toMatch(/dad-app-secrets-staging.*StripeSecret.*:STRIPE_WEBHOOK_SECRET::/);
-    expect(byName.DONOR_CONTENT_ENCRYPTION_KEY).toMatch(
+    expect(api.STRIPE_WEBHOOK_SECRET).toMatch(/dad-app-secrets-staging.*StripeSecret.*:STRIPE_WEBHOOK_SECRET::/);
+    expect(api.DONOR_CONTENT_ENCRYPTION_KEY).toMatch(
       /dad-app-secrets-staging.*EncryptionSecret.*:DONOR_CONTENT_ENCRYPTION_KEY::/,
     );
-    expect(byName.DONOR_SMTP_HOST).toMatch(/dad-ses-staging.*SmtpSecret.*:DONOR_SMTP_HOST::/);
-    expect(byName.DONOR_SMS_AUTH_TOKEN).toMatch(/dad-app-secrets-staging.*SignInSecret.*:DONOR_SMS_AUTH_TOKEN::/);
-    const web = Object.values(defs).find((d) => d.Properties.Family === 'dad-web');
-    const webByName = Object.fromEntries(
-      (web?.Properties.ContainerDefinitions[0].Secrets as Array<{ Name: string; ValueFrom: unknown }>).map((s) => [
-        s.Name,
-        JSON.stringify(s.ValueFrom),
-      ]),
-    );
-    expect(webByName.DONOR_OAUTH_APPLE_CLIENT_SECRET).toMatch(
+    expect(api.DONOR_SMTP_HOST).toMatch(/dad-ses-staging.*SmtpSecret.*:DONOR_SMTP_HOST::/);
+    expect(api.DONOR_SMS_AUTH_TOKEN).toMatch(/dad-app-secrets-staging.*SignInSecret.*:DONOR_SMS_AUTH_TOKEN::/);
+    expect(secretSources('dad-web').DONOR_OAUTH_APPLE_CLIENT_SECRET).toMatch(
       /dad-app-secrets-staging.*WebOAuthSecret.*:DONOR_OAUTH_APPLE_CLIENT_SECRET::/,
     );
   });

@@ -1,6 +1,6 @@
 import { Template } from 'aws-cdk-lib/assertions';
 import { buildGraph } from './helpers';
-import { toRetentionDays } from '../lib/ecs-cluster-stack';
+import { SERVICE_NAMES, toRetentionDays } from '../lib/ecs-cluster-stack';
 import * as logs from 'aws-cdk-lib/aws-logs';
 
 describe('EcsClusterStack', () => {
@@ -29,19 +29,22 @@ describe('EcsClusterStack', () => {
     expect(setting('staging')).toEqual([{ Name: 'containerInsights', Value: 'disabled' }]);
   });
 
-  it('sets log-group retention from config (staging 30 days)', () => {
-    const t = Template.fromStack(buildGraph('staging').ecsCluster);
-    // 9 service log groups, each with 30-day retention.
-    t.hasResourceProperties('AWS::Logs::LogGroup', { RetentionInDays: 30 });
+  it.each([
+    ['staging', 30],
+    ['production', 365],
+  ] as const)('gives every %s service log group %i-day retention', (env, days) => {
+    const groups = Object.values(
+      Template.fromStack(buildGraph(env).ecsCluster).findResources('AWS::Logs::LogGroup'),
+    );
+    expect(groups).toHaveLength(SERVICE_NAMES.length);
+    for (const g of groups) {
+      expect(g.Properties.RetentionInDays).toBe(days);
+    }
   });
 
-  it('sets log-group retention from config (production 365 days)', () => {
-    const t = Template.fromStack(buildGraph('production').ecsCluster);
-    t.hasResourceProperties('AWS::Logs::LogGroup', { RetentionInDays: 365 });
-  });
-
-  it('maps retention days to the nearest supported enum', () => {
+  it('maps retention days to the matching enum and rejects unsupported counts', () => {
     expect(toRetentionDays(30)).toBe(logs.RetentionDays.ONE_MONTH);
     expect(toRetentionDays(365)).toBe(logs.RetentionDays.ONE_YEAR);
+    expect(() => toRetentionDays(45)).toThrow(/unsupported log retention: 45/);
   });
 });

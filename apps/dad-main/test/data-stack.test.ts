@@ -1,5 +1,6 @@
 import { Template, Match } from 'aws-cdk-lib/assertions';
 import { buildGraph } from './helpers';
+import { ALL_LOGINS } from '../lib/db-url';
 
 describe('DataStack', () => {
   it('runs PostgreSQL engine version 16', () => {
@@ -16,9 +17,9 @@ describe('DataStack', () => {
     t.resourceCountIs('AWS::RDS::DBProxy', 1);
   });
 
-  it('mints 13 secrets: 11 process logins + owner + master', () => {
+  it('creates one secret per login plus the master', () => {
     const t = Template.fromStack(buildGraph('staging').data);
-    t.resourceCountIs('AWS::SecretsManager::Secret', 13);
+    t.resourceCountIs('AWS::SecretsManager::Secret', ALL_LOGINS.length + 1);
   });
 
   it('multiAz is false for staging and true for production', () => {

@@ -16,9 +16,11 @@ const config = getConfig(envName);
 // CDK_DEFAULT_ACCOUNT/REGION enable offline synth; see lib/target-env.ts.
 const env: cdk.Environment = resolveTarget(config);
 
-// Tag everything with the environment for cost allocation and traceability.
-cdk.Tags.of(app).add('Project', 'dad');
-cdk.Tags.of(app).add('Environment', config.env);
+// Tag everything with the environment for cost allocation and traceability. A proxy target
+// group is not taggable in CloudFormation.
+const tagOptions = { excludeResourceTypes: ['AWS::RDS::DBProxyTargetGroup'] };
+cdk.Tags.of(app).add('Project', 'dad', tagOptions);
+cdk.Tags.of(app).add('Environment', config.env, tagOptions);
 
 buildDadApp(app, config, env);
 

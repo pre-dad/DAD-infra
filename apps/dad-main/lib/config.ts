@@ -133,7 +133,7 @@ export interface EnvConfig extends SharedEnvConfig {
   readonly flowLogRetentionDays: number;
   /** Dedicated SES sending subdomain (e.g. mail.staging.dynamicaid.org). */
   readonly sendingSubdomain: string;
-  /** Whether the nginx ingress SG is restricted to Cloudflare ranges. */
+  /** Whether the NLB security group admits only Cloudflare ranges (otherwise the internet). */
   readonly cloudflareIngressEnabled: boolean;
   /**
    * Whether the six worker services run. The ONE switch for workers: when false their

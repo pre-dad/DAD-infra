@@ -2,8 +2,8 @@
 
 How to bring up `staging` or `production` for the first time. Later releases need none
 of this: DAD-Main's `deploy.yml` deploys the application, and `dad-main-infra.yml`
-deploys infrastructure changes. (`atm-infra.yml` only runs checks: the DAD-Quality runner
-is not deployed.)
+deploys infrastructure changes. (Nothing deploys `apps/atm`: the DAD-Quality runner is
+not deployed; the `synth` check only synthesizes it.)
 
 Everything here runs once per environment, by an operator with administrator access to
 that account, in `us-east-2`. Commands assume `ENV=staging` (or `production`) and a shell
@@ -254,11 +254,8 @@ Proxy needs. Each execution role can read only the login secrets its task inject
 `app-deploy` role needs no secret access, since `ecs-pin-image.sh` copies `secrets` verbatim
 into the new revision.
 
-Deploy ordering: DAD-Main from commit 7506cbf accepts both forms (a full URL still wins),
-so deploy DAD-Main with 7506cbf first, then this change at any time after. Rolling this out
-before that DAD-Main release makes the processes fail to find a password. Rolling back
-either side is safe while the other still supports the form in use. Rotating a password
-changes the secret value only: restart the service, no redeploy of the template.
+DAD-Main accepts either form (a full URL still wins). Rotating a password changes the
+secret value only: restart the service, no redeploy of the template.
 
 ### 9. DAD-Quality runner: not deployed
 
@@ -266,21 +263,20 @@ Do not deploy `apps/atm`. DAD-Main's ATM gate and its Worker ledger are the sing
 of truth for findings, and this runner cannot publish to that ledger (design doc §6.5,
 DAD-Docs ADR 0006).
 
-## Verified against code, not against AWS
+## Why the NLB and `web` are wired this way
 
-Nothing in this runbook has been run: no environment exists yet. Two reported first-deploy
-blockers were checked against DAD-Main's `deploy/nginx` and fixed here:
+These follow DAD-Main's `deploy/nginx` files; they have not been exercised in a running
+AWS environment.
 
 - **NLB health check.** nginx binds `/health` to `127.0.0.1:8081` (`nginx.conf`), which the
-  NLB cannot reach, so the old HTTP check on 8081 would have left every target unhealthy.
-  The target groups now use a TCP check on the traffic port (8443, 8080); the 8081 security
-  group rule and port mapping are gone. The container health check still probes
-  `127.0.0.1:8081/health` inside the task, and ECS registers a task only once that passes.
-  DAD-Main needs no change.
+  NLB cannot reach, so the target groups use a TCP check on the traffic port (8443, 8080).
+  No security group rule or port mapping exposes 8081. The container health check still
+  probes `127.0.0.1:8081/health` inside the task, and ECS registers a task only once that
+  passes.
 - **`web` resolution.** nginx's `server web:3000;` (the Dockerfile removes the Docker
-  resolver) needs a Service Connect name. `web` now publishes itself as `web:3000`, nginx
+  resolver) needs a Service Connect name. `web` publishes itself as `web:3000`, nginx
   joins the namespace as a client, and the nginx service waits for the web service. The
-  existing nginx to web:3000 and web to api:8002 security group rules carry that traffic.
+  nginx to web:3000 and web to api:8002 security group rules carry that traffic.
 
 Target group deregistration delay is 30 seconds (the default is 300).
 

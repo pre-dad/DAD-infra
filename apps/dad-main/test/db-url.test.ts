@@ -1,28 +1,15 @@
 import {
-  buildDatabaseUrl,
+  buildPasswordlessDatabaseUrl,
   DB_URL_QUERY_STRING,
   PROCESS_LOGINS,
   OWNER_LOGIN,
   ALL_LOGINS,
 } from '../lib/db-url';
 
-describe('buildDatabaseUrl', () => {
-  it('produces the exact connection-string shape', () => {
-    const url = buildDatabaseUrl({
-      login: 'dad_api_login',
-      password: 's3cr3t',
-      proxyEndpoint: 'dad-proxy.proxy-abc123.us-east-2.rds.amazonaws.com',
-      db: 'dad',
-    });
-    expect(url).toBe(
-      'postgresql://dad_api_login:s3cr3t@dad-proxy.proxy-abc123.us-east-2.rds.amazonaws.com:5432/dad?default_query_exec_mode=exec&sslmode=verify-full',
-    );
-  });
-
+describe('buildPasswordlessDatabaseUrl', () => {
   it('always carries the transaction-pooler + verify-full query string', () => {
-    const url = buildDatabaseUrl({
+    const url = buildPasswordlessDatabaseUrl({
       login: 'x',
-      password: 'y',
       proxyEndpoint: 'host',
       db: 'dad',
     });
