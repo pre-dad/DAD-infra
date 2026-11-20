@@ -60,13 +60,12 @@ export interface EdgeStackProps extends cdk.StackProps {
  * Internet-facing Network Load Balancer with TCP listeners 443→nginx:8443 and
  * 80→nginx:8080, targeting the nginx service with TCP health checks on the traffic
  * port and a 30 s deregistration delay. When
- * config.cloudflareIngressEnabled is set, the nginx SG's edge ingress is
- * restricted to Cloudflare's published ranges instead of the open internet.
+ * config.cloudflareIngressEnabled is set, the NLB security group admits only
+ * Cloudflare's published ranges on 80/443 instead of the open internet.
  *
  * The ranges come from CDK context `cloudflareRanges`, defaulting to Cloudflare's
  * published lists (https://www.cloudflare.com/ips-v4 and ips-v6) as of the last review.
- * The NLB's own security group admits only those ranges on 80/443; without a rule it
- * admits nothing.
+ * Without a rule the NLB's security group admits nothing.
  */
 export class EdgeStack extends cdk.Stack {
   public readonly loadBalancer: elbv2.NetworkLoadBalancer;
@@ -127,8 +126,7 @@ export class EdgeStack extends cdk.Stack {
 
     // --- Cloudflare ingress toggle --------------------------------------
     // A load balancer with a security group drops everything its group does not allow,
-    // so the NLB group carries the public rules; nginx admits the NLB group (network
-    // stack) and, below, the same ranges.
+    // so the NLB group carries the public rules.
     const publicPorts = [80, 443];
     for (const port of publicPorts) {
       if (config.cloudflareIngressEnabled) {
@@ -148,24 +146,14 @@ export class EdgeStack extends cdk.Stack {
       }
     }
 
-    const edgePorts = [
-      { port: 8080, label: 'http' },
-      { port: 8443, label: 'https' },
-    ];
-
-    if (config.cloudflareIngressEnabled) {
-      for (const cidr of this.cloudflareRanges()) {
-        const isV6 = cidr.includes(':');
-        for (const { port, label } of edgePorts) {
-          nginxSecurityGroup.addIngressRule(
-            isV6 ? ec2.Peer.ipv6(cidr) : ec2.Peer.ipv4(cidr),
-            ec2.Port.tcp(port),
-            `nginx ${label} from Cloudflare ${cidr}`,
-          );
-        }
-      }
-    } else {
-      for (const { port, label } of edgePorts) {
+    // The NLB has a security group, so targets see the NLB's address rather than the
+    // client's: nginx admits the NLB group (network stack), and per-range rules on the
+    // nginx group could never match. Only the toggle-off case opens it directly.
+    if (!config.cloudflareIngressEnabled) {
+      for (const { port, label } of [
+        { port: 8080, label: 'http' },
+        { port: 8443, label: 'https' },
+      ]) {
         nginxSecurityGroup.addIngressRule(
           ec2.Peer.anyIpv4(),
           ec2.Port.tcp(port),
