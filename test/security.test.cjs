@@ -27,7 +27,6 @@ test('Jest preset merging preserves nested values, array concatenation and sourc
   assert.deepEqual(preset.compiler.paths, ['preset']);
 });
 
-
 test('CDK resolves the patched minimatch and preserves ordinary asset globs', () => {
   const path = require('node:path');
   const cdk = path.dirname(require.resolve('aws-cdk-lib/package.json'));

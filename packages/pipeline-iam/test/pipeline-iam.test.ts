@@ -95,9 +95,15 @@ describe('scopedDeployRole', () => {
     }
   });
 
-  test('the package exports no branch or tag trust helper', () => {
-    const exported = Object.keys(require('../src/index'));
-    expect(exported).not.toContain('githubSubjectConditions');
-    expect(exported).not.toContain('githubOidcPrincipal');
+  test('the package exports exactly the environment-trust API', () => {
+    expect(Object.keys(require('../src/index')).sort()).toEqual([
+      'GITHUB_OIDC_HOST',
+      'GITHUB_OIDC_URL',
+      'GitHubOidcProvider',
+      'OIDC_AUDIENCE',
+      'githubEnvironmentPrincipal',
+      'githubEnvironmentSubject',
+      'scopedDeployRole',
+    ]);
   });
 });
