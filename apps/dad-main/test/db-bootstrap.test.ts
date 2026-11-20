@@ -12,8 +12,8 @@ describe('database owner bootstrap', () => {
   // only by the one-off bootstrap task, never through the proxy every app process uses.
   it('does not register the master secret with the RDS Proxy', () => {
     const t = Template.fromStack(buildGraph('staging').data);
-    const masterId = ids(t, 'AWS::SecretsManager::Secret').find(
-      (id) => !id.startsWith('LoginSecret'),
+    const masterId = ids(t, 'AWS::SecretsManager::Secret').find((id) =>
+      id.startsWith('MasterSecret'),
     );
     expect(masterId).toBeDefined();
     const proxy = Object.values(t.findResources('AWS::RDS::DBProxy') as Record<string, Res>)[0];

@@ -34,13 +34,17 @@ describe('NetworkStack', () => {
 
   it('gives workers an SG with no inbound rules', () => {
     const t = synth('staging');
-    // The workers SG is referenced as a source for the proxy ingress but never
-    // appears as the GroupId of an ingress rule itself.
-    const ingress = t.findResources('AWS::EC2::SecurityGroupIngress');
-    const workerDesc = Object.values(ingress).filter((r) =>
-      JSON.stringify(r).includes('no inbound'),
+    const workers = Object.entries(t.findResources('AWS::EC2::SecurityGroup')).find(
+      ([, sg]) => sg.Properties.GroupDescription === 'DAD worker services (no inbound).',
     );
-    expect(workerDesc).toHaveLength(0);
+    expect(workers).toBeDefined();
+    const [workersId, workersSg] = workers!;
+    expect(workersSg.Properties.SecurityGroupIngress ?? []).toEqual([]);
+    // The workers SG may be a rule's source, never the group a rule opens.
+    const opened = Object.values(t.findResources('AWS::EC2::SecurityGroupIngress')).filter(
+      (r) => JSON.stringify(r.Properties.GroupId).includes(workersId),
+    );
+    expect(opened).toEqual([]);
   });
 
   it('production provisions two NAT gateways for AZ redundancy', () => {
@@ -165,22 +169,25 @@ describe('NetworkStack', () => {
       t.hasResourceProperties('AWS::Logs::LogGroup', { RetentionInDays: 90 });
     });
   });
-});
 
-it('admits the native ingress to the API without exposing its port publicly', () => {
-  const t = synth('staging');
-  const groups = Object.entries(t.findResources('AWS::EC2::SecurityGroup'));
-  const id = (description: string) =>
-    groups.find(([, resource]) => resource.Properties.GroupDescription === description)?.[0];
-  t.hasResourceProperties('AWS::EC2::SecurityGroupIngress', {
-    GroupId: { 'Fn::GetAtt': [id('DAD api service.'), 'GroupId'] },
-    SourceSecurityGroupId: { 'Fn::GetAtt': [id('DAD nginx ingress service.'), 'GroupId'] },
-    IpProtocol: 'tcp',
-    FromPort: 8002,
-    ToPort: 8002,
+  it('admits the native ingress to the API without exposing its port publicly', () => {
+    const t = synth('staging');
+    const groups = Object.entries(t.findResources('AWS::EC2::SecurityGroup'));
+    const id = (description: string) =>
+      groups.find(([, resource]) => resource.Properties.GroupDescription === description)?.[0];
+    const apiId = id('DAD api service.');
+    expect(apiId).toBeDefined();
+    t.hasResourceProperties('AWS::EC2::SecurityGroupIngress', {
+      GroupId: { 'Fn::GetAtt': [apiId, 'GroupId'] },
+      SourceSecurityGroupId: { 'Fn::GetAtt': [id('DAD nginx ingress service.'), 'GroupId'] },
+      IpProtocol: 'tcp',
+      FromPort: 8002,
+      ToPort: 8002,
+    });
+    const apiRules = Object.values(t.findResources('AWS::EC2::SecurityGroupIngress'))
+      .filter(rule => JSON.stringify(rule.Properties.GroupId).includes(apiId!));
+    expect(apiRules.length).toBeGreaterThan(0);
+    expect(apiRules.every(rule =>
+      rule.Properties.CidrIp === undefined && rule.Properties.CidrIpv6 === undefined)).toBe(true);
   });
-  const apiRules = Object.values(t.findResources('AWS::EC2::SecurityGroupIngress'))
-    .filter(rule => JSON.stringify(rule.Properties.GroupId).includes(id('DAD api service.') ?? 'NO_API'));
-  expect(apiRules.every(rule =>
-    rule.Properties.CidrIp === undefined && rule.Properties.CidrIpv6 === undefined)).toBe(true);
 });

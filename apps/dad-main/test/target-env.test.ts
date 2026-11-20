@@ -1,8 +1,8 @@
 import { getConfig } from '../lib/config';
 import { resolveTarget } from '../lib/target-env';
 
-const STAGING = '853377042897';
-const PRODUCTION = '216833405626';
+const STAGING = getConfig('staging').account;
+const PRODUCTION = getConfig('production').account;
 
 describe('resolveTarget', () => {
   it('accepts the matching real account for each env', () => {

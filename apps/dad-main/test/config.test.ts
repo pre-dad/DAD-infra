@@ -72,7 +72,7 @@ describe('getConfig', () => {
     );
   });
 
-  it('sizes staging for a few testers and leaves production unchanged', () => {
+  it('sizes staging small and production larger', () => {
     const staging = getConfig('staging');
     expect(staging.database).toEqual({
       instanceType: 't4g.small',
@@ -94,12 +94,12 @@ describe('getConfig', () => {
     expect(getConfig('staging').interfaceEndpointsEnabled).toBe(false);
     expect(getConfig('production').interfaceEndpointsEnabled).toBe(true);
   });
-});
 
-it.each(['staging', 'production'] as const)('%s has a dedicated native API origin', env => {
-  const suffix = env === 'staging' ? 'staging.dynamicaid.org' : 'dynamicaid.org';
-  expect(getConfig(env)).toMatchObject({
-    nativeApiHost: `api.${suffix}`,
-    nativeApiOrigin: `https://api.${suffix}`,
+  it.each(['staging', 'production'] as const)('%s has a dedicated native API origin', env => {
+    const suffix = env === 'staging' ? 'staging.dynamicaid.org' : 'dynamicaid.org';
+    expect(getConfig(env)).toMatchObject({
+      nativeApiHost: `api.${suffix}`,
+      nativeApiOrigin: `https://api.${suffix}`,
+    });
   });
 });

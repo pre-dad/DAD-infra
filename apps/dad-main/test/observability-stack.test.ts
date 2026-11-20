@@ -1,4 +1,5 @@
-import { Template, Match } from 'aws-cdk-lib/assertions';
+import { Template } from 'aws-cdk-lib/assertions';
+import { SERVICE_NAMES } from '../lib/ecs-cluster-stack';
 import { buildGraph } from './helpers';
 
 describe('ObservabilityStack', () => {
@@ -11,6 +12,16 @@ describe('ObservabilityStack', () => {
     const t = Template.fromStack(buildGraph('production').observability);
     // api, web, nginx + 2 database.
     t.resourceCountIs('AWS::CloudWatch::Alarm', 5);
+    const names = Object.values(t.findResources('AWS::CloudWatch::Alarm')).map(
+      (a) => a.Properties.AlarmName,
+    );
+    expect(names.sort()).toEqual([
+      'dad-production-DatabaseCpu',
+      'dad-production-DatabaseFreeStorage',
+      'dad-production-api-unhealthy',
+      'dad-production-nginx-unhealthy',
+      'dad-production-web-unhealthy',
+    ]);
   });
 
   it('adds an alarm per worker service once workers are on', () => {
@@ -18,6 +29,12 @@ describe('ObservabilityStack', () => {
       buildGraph('production', { workersEnabled: true }).observability,
     );
     t.resourceCountIs('AWS::CloudWatch::Alarm', 11);
+    const names = Object.values(t.findResources('AWS::CloudWatch::Alarm')).map(
+      (a) => a.Properties.AlarmName as string,
+    );
+    for (const worker of SERVICE_NAMES.filter((n) => !['api', 'web', 'nginx'].includes(n))) {
+      expect(names).toContain(`dad-production-${worker}-unhealthy`);
+    }
   });
 
   it('keeps only the database alarms where Container Insights is off (staging)', () => {
@@ -25,6 +42,10 @@ describe('ObservabilityStack', () => {
       buildGraph('staging', { workersEnabled: true }).observability,
     );
     t.resourceCountIs('AWS::CloudWatch::Alarm', 2);
+    const [topicId] = Object.keys(t.findResources('AWS::SNS::Topic'));
+    for (const alarm of Object.values(t.findResources('AWS::CloudWatch::Alarm'))) {
+      expect(alarm.Properties.AlarmActions).toEqual([{ Ref: topicId }]);
+    }
     const metrics = Object.values(t.findResources('AWS::CloudWatch::Alarm')).map(
       (a) => a.Properties.MetricName,
     );
@@ -43,10 +64,11 @@ describe('ObservabilityStack', () => {
 
   it('service-health alarms fire when running < desired', () => {
     const t = Template.fromStack(buildGraph('production').observability);
+    const [topicId] = Object.keys(t.findResources('AWS::SNS::Topic'));
     t.hasResourceProperties('AWS::CloudWatch::Alarm', {
       ComparisonOperator: 'LessThanThreshold',
       MetricName: 'RunningTaskCount',
-      AlarmActions: Match.anyValue(),
+      AlarmActions: [{ Ref: topicId }],
     });
   });
 
