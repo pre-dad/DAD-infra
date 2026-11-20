@@ -76,7 +76,10 @@ def handler(event, context, sm=None, iam=None, ecs=None, smtp_login=None, sleep=
     if token not in versions:
         raise ValueError(f"version {token} is not staged for rotation of {arn}")
     if _CURRENT in versions[token]:
-        return  # This version is already current: the rotation already finished.
+        if step == "finishSecret":
+            # A retry after the stage moved but the restart failed: restart again.
+            _restart_mail_workers(ecs)
+        return
     if _PENDING not in versions[token]:
         raise ValueError(f"version {token} is not AWSPENDING for {arn}")
 
@@ -149,12 +152,10 @@ def _test(sm, arn, token, smtp_login, sleep, attempts=12, delay=10):
 
 def _finish(sm, ecs, arn, token, versions):
     current_version = next((v for v, stages in versions.items() if _CURRENT in stages), None)
-    sm.update_secret_version_stage(
-        SecretId=arn,
-        VersionStage=_CURRENT,
-        MoveToVersionId=token,
-        RemoveFromVersionId=current_version,
-    )
+    move = {"SecretId": arn, "VersionStage": _CURRENT, "MoveToVersionId": token}
+    if current_version is not None:
+        move["RemoveFromVersionId"] = current_version
+    sm.update_secret_version_stage(**move)
     _restart_mail_workers(ecs)
 
 
