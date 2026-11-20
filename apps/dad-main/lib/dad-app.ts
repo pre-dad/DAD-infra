@@ -142,7 +142,7 @@ export function buildDadApp(app: cdk.App, config: EnvConfig, env: cdk.Environmen
       destinationRegion: drRegion,
       terminationProtection,
     });
-    backup.addDependency(drVault);
+    backup.addStackDependency(drVault);
   }
 
   // 9. Pipeline IAM — GitHub OIDC provider + deploy roles.

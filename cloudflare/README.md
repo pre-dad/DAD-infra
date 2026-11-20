@@ -119,17 +119,7 @@ Rules are also visible and editable in the dashboard under Security → Security
 - **Bot Fight Mode.** Leave the free Bot Fight Mode off; it cannot be skipped and may
   challenge Stripe deliveries (see DAD-Main `docs/edge.md`).
 
-## Tests
-
-```sh
-npm run test:cloudflare
-```
-
-Runs `node --test cloudflare/*.test.mjs` with a mocked `fetch`: expression sanity, the webhook and
-health exclusions, the threshold table above, plan tiers, request bodies, unmanaged rule
-preservation, idempotency, and the refusal without `--apply`.
-
-### Native API hosts
+## Native API hosts
 
 Set `EDGE_NATIVE_HOSTS` for the same distinct host configured as Main's
 `DONOR_NATIVE_API_ORIGIN`. Auth and visitor rules include the corresponding direct
@@ -139,3 +129,13 @@ Bot Fight Mode; managed WAF, custom security rules and rate limits remain active
 Do not add an interactive challenge on this host. Free Bot Fight Mode cannot be
 skipped, so leave it disabled for a zone serving native API traffic. The zone owner
 must review and apply the rendered rules before activating the hostname.
+
+## Tests
+
+```sh
+npm run test:cloudflare
+```
+
+Runs `node --test cloudflare/*.test.mjs` with a mocked `fetch`: expression sanity, the webhook and
+health exclusions, the threshold table above, plan tiers, request bodies, unmanaged rule
+preservation, idempotency, and the refusal without `--apply`.

@@ -1,6 +1,7 @@
 import { DESCRIPTION_PREFIX, REF_PREFIX } from "./definition.mjs";
 
 const API = "https://api.cloudflare.com/client/v4";
+export const REQUEST_TIMEOUT_MS = 30_000;
 const SERVER_FIELDS = ["last_updated", "version", "categories"];
 
 export const isManaged = (rule) =>
@@ -8,14 +9,23 @@ export const isManaged = (rule) =>
   String(rule.description ?? "").startsWith(DESCRIPTION_PREFIX);
 
 async function call(fetchImpl, credential, method, path, body) {
-  const res = await fetchImpl(`${API}${path}`, {
-    method,
-    headers: {
-      Authorization: `Bearer ${credential}`,
-      "Content-Type": "application/json",
-    },
-    body: body === undefined ? undefined : JSON.stringify(body),
-  });
+  let res;
+  try {
+    res = await fetchImpl(`${API}${path}`, {
+      method,
+      headers: {
+        Authorization: `Bearer ${credential}`,
+        "Content-Type": "application/json",
+      },
+      body: body === undefined ? undefined : JSON.stringify(body),
+      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+    });
+  } catch (error) {
+    if (error?.name === "TimeoutError" || error?.name === "AbortError") {
+      throw new Error(`${method} ${path} timed out after ${REQUEST_TIMEOUT_MS / 1000}s`);
+    }
+    throw error;
+  }
   const payload = await res.json().catch(() => ({}));
   return { status: res.status, payload };
 }
@@ -73,6 +83,14 @@ export function mergeRules({ current, desired, disable = [] }) {
     currentManaged.delete(rule.ref);
   }
   for (const [ref, rule] of currentManaged) changes.push({ kind: "remove", ref, before: clean(rule) });
+  // The PUT writes our rules first, in definition order, then the unmanaged ones.
+  const position = (r) => (isManaged(r) ? r.ref : null);
+  const expected = [...managed.map((r) => r.ref), ...unmanaged.map(() => null)];
+  const present = current.filter((r) => !isManaged(r) || managed.some((m) => m.ref === r.ref)).map(position);
+  const wanted = expected.filter((ref) => ref === null || present.includes(ref));
+  if (present.length !== wanted.length || present.some((ref, i) => ref !== wanted[i])) {
+    changes.push({ kind: "reorder", ref: "(managed rules before unmanaged, in definition order)" });
+  }
   return { rules: [...managed, ...unmanaged], changes, unmanaged: unmanaged.length };
 }
 

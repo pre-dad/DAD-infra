@@ -58,8 +58,6 @@ describe.each(['staging', 'production'] as const)('database credentials (%s)', (
         expect(`${t.family} ${name} ${v}`).not.toMatch(/resolve:secretsmanager/);
         expect(`${t.family} ${name} ${v}`).not.toMatch(/PASSWORD/i);
         if (name.endsWith('_DATABASE_URL')) {
-          // A password-less URL: no ":password@" between the login and the host.
-          expect(`${t.family} ${name}`).toMatch(/^\S+ \S+$/);
           expect(v).toMatch(/postgresql:\/\/[a-z_]+@/);
         }
       }

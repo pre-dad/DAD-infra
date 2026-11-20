@@ -1,10 +1,10 @@
 import { Template } from 'aws-cdk-lib/assertions';
+import { getConfig } from '../lib/config';
 import { buildGraph } from './helpers';
 
-const ACCOUNTS = [
-  ['staging', '853377042897'],
-  ['production', '216833405626'],
-] as const;
+const ACCOUNTS = (['staging', 'production'] as const).map(
+  (env) => [env, getConfig(env).account] as const,
+);
 
 interface Statement {
   Sid: string;

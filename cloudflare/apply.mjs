@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import { readFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
-import { applyPhase, planPhase } from "./cloudflare.mjs";
+import { planPhase, putRules } from "./cloudflare.mjs";
 import { PHASE_CUSTOM, PHASE_RATE_LIMIT, TIERS, buildDefinition } from "./definition.mjs";
 
 const USAGE = `Usage: node cloudflare/apply.mjs <render|plan|apply> --tier <${TIERS.join("|")}> [options]
@@ -23,6 +23,8 @@ Environment:
   CLOUDFLARE_API_CREDENTIAL        API credential with Zone WAF Edit, or
   CLOUDFLARE_API_CREDENTIAL_FILE   path to a file holding it`;
 
+class UsageError extends Error {}
+
 const list = (value) =>
   (value ?? "")
     .split(",")
@@ -32,17 +34,23 @@ const list = (value) =>
 export function parseArgs(argv) {
   const args = { command: null, tier: null, apply: false, disable: [], removeAll: false };
   const rest = [...argv];
+  const valueOf = (flag) => {
+    const value = rest.shift();
+    if (value === undefined || value.startsWith("--")) throw new UsageError(`${flag} needs a value`);
+    return value;
+  };
   while (rest.length) {
     const a = rest.shift();
     if (a === "--apply") args.apply = true;
     else if (a === "--remove-all") args.removeAll = true;
-    else if (a === "--tier") args.tier = rest.shift() ?? null;
-    else if (a === "--disable") args.disable = list(rest.shift());
+    else if (a === "--tier") args.tier = valueOf(a);
+    else if (a === "--disable") args.disable = list(valueOf(a));
     else if (!a.startsWith("--") && args.command === null) args.command = a;
-    else throw new Error(`unknown argument "${a}"`);
+    else throw new UsageError(`unknown argument "${a}"`);
   }
-  if (!["render", "plan", "apply"].includes(args.command)) throw new Error("expected render, plan or apply");
-  if (!args.tier) throw new Error("--tier is required");
+  if (!["render", "plan", "apply"].includes(args.command)) throw new UsageError("expected render, plan or apply");
+  if (!args.tier) throw new UsageError("--tier is required");
+  if (!TIERS.includes(args.tier)) throw new UsageError(`unknown tier "${args.tier}" (expected ${TIERS.join(", ")})`);
   return args;
 }
 
@@ -72,7 +80,7 @@ function describe(planned) {
 export async function run(argv, { env = process.env, fetchImpl = fetch, readFile = readFileSync, out = console.log } = {}) {
   const args = parseArgs(argv);
   if (args.command === "apply" && !args.apply) {
-    throw new Error("refusing to change the zone: apply needs --apply (use plan for a dry run)");
+    throw new UsageError("refusing to change the zone: apply needs --apply (use plan for a dry run)");
   }
   const phases = { [PHASE_RATE_LIMIT]: [], [PHASE_CUSTOM]: [] };
   if (!args.removeAll) {
@@ -80,6 +88,10 @@ export async function run(argv, { env = process.env, fetchImpl = fetch, readFile
     Object.assign(phases, definition.phases);
     for (const skipped of definition.skipped) out(`skipped ${skipped}`);
   }
+
+  const known = new Set(Object.values(phases).flat().map((r) => r.ref));
+  const unknown = args.disable.filter((ref) => !known.has(ref));
+  if (unknown.length) throw new UsageError(`--disable names no rule this tier defines: ${unknown.join(", ")}`);
 
   if (args.command === "render") {
     out(JSON.stringify(phases, null, 2));
@@ -89,15 +101,22 @@ export async function run(argv, { env = process.env, fetchImpl = fetch, readFile
   const zoneId = env.CLOUDFLARE_ZONE_ID;
   if (!zoneId) throw new Error("set CLOUDFLARE_ZONE_ID");
   const credential = credentialFrom(env, readFile);
+  // Read and plan every phase before writing any, so a read failure cannot leave one
+  // phase applied and the other not.
   const results = [];
   for (const [phase, desired] of Object.entries(phases)) {
-    const step = { fetchImpl, credential, zoneId, phase, desired, disable: args.disable };
-    const planned = args.command === "apply" ? await applyPhase(step) : await planPhase(step);
+    results.push(await planPhase({ fetchImpl, credential, zoneId, phase, desired, disable: args.disable }));
+  }
+  for (const planned of results) {
     out(describe(planned));
     for (const c of planned.changes.filter((c) => c.kind === "change")) {
       out(`    before: ${JSON.stringify(c.before)}\n    after:  ${JSON.stringify(c.rule)}`);
     }
-    results.push(planned);
+  }
+  if (args.command === "apply") {
+    for (const planned of results.filter((p) => p.dirty)) {
+      await putRules({ fetchImpl, credential, zoneId, phase: planned.phase, rules: planned.rules });
+    }
   }
   out(args.command === "apply" ? "applied" : "dry run: nothing changed");
   return { phases, results };
@@ -105,7 +124,7 @@ export async function run(argv, { env = process.env, fetchImpl = fetch, readFile
 
 if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href) {
   run(process.argv.slice(2)).catch((error) => {
-    console.error(`error: ${error.message}\n\n${USAGE}`);
+    console.error(`error: ${error.message}${error instanceof UsageError ? `\n\n${USAGE}` : ""}`);
     process.exitCode = 1;
   });
 }

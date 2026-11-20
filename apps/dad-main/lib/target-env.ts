@@ -1,11 +1,7 @@
 import * as cdk from 'aws-cdk-lib';
 import { EnvConfig } from './config';
 
-/**
- * Dummy account ids used for offline synth: CI and AGENTS.md use 000000000000, the
- * README uses 111111111111, and the test helpers use 111111111111. They are not real
- * accounts, so they can never point a deploy at the wrong place.
- */
+/** Dummy account ids for offline synth (CI and tests); they cannot point a deploy at a real account. */
 const OFFLINE_PLACEHOLDER_ACCOUNTS: readonly string[] = ['000000000000', '111111111111'];
 
 /**

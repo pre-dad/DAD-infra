@@ -5,12 +5,17 @@ import * as ecs from 'aws-cdk-lib/aws-ecs';
 import * as ecr from 'aws-cdk-lib/aws-ecr';
 import * as logs from 'aws-cdk-lib/aws-logs';
 import * as secretsmanager from 'aws-cdk-lib/aws-secretsmanager';
-import { EnvConfig } from './config';
+import { EnvConfig, ServiceScaling } from './config';
 import { PROCESS_LOGINS } from './db-url';
 import { ServiceName } from './ecs-cluster-stack';
 import { imageTagFor } from './image-tag';
-import { AppSecrets, databaseConnection, secretFields, TaskFactory } from './task-factory';
-import { ServiceScaling } from './config';
+import {
+  AppSecrets,
+  databaseConnection,
+  secretFields,
+  STRIPE_REQUESTS_PER_SECOND,
+  TaskFactory,
+} from './task-factory';
 import { APP_SECRET_FIELDS } from './app-secrets-stack';
 
 /** Props for {@link ServicesStack}. */
@@ -152,7 +157,7 @@ export class ServicesStack extends cdk.Stack {
 
     // Each process gets a password-less URL in its environment and the login secret's
     // password as an ECS secret (<PREFIX>_PASSWORD), which DAD-Main combines at start.
-    const db = (processId: string) => {
+    const db = (processId: keyof typeof PROCESS_LOGINS) => {
       const login = PROCESS_LOGINS[processId];
       return databaseConnection(login, loginSecrets[login.login], proxyEndpoint, config.dbName);
     };
@@ -370,7 +375,7 @@ export class ServicesStack extends cdk.Stack {
         ...workerDb.environment,
       };
       if (w.service === 'stripe-worker') {
-        environment.DONOR_STRIPE_REQUESTS_PER_SECOND = '25';
+        environment.DONOR_STRIPE_REQUESTS_PER_SECOND = STRIPE_REQUESTS_PER_SECOND;
       }
       if (w.mail) {
         environment.DONOR_PUBLIC_ORIGIN = config.publicOrigin;

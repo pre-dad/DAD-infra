@@ -122,7 +122,10 @@ describe('PipelineIamStack', () => {
   // (update-service, describe-services). A missing action fails the first real deploy.
   it('lets app-deploy do every ECS call the DAD-Main pipeline scripts make', () => {
     const t = Template.fromStack(buildGraph('staging').pipelineIam);
-    const policies = Object.values(t.findResources('AWS::IAM::Policy'));
+    const policies = Object.values(t.findResources('AWS::IAM::Policy')).filter((p) =>
+      JSON.stringify(p.Properties.Roles).includes('AppDeployRole'),
+    );
+    expect(policies.length).toBeGreaterThan(0);
     const actions = policies
       .flatMap((p) => p.Properties.PolicyDocument.Statement as Array<{ Action: string | string[] }>)
       .flatMap((s) => (Array.isArray(s.Action) ? s.Action : [s.Action]));
@@ -139,10 +142,8 @@ describe('PipelineIamStack', () => {
   });
 
   it('lets app-deploy record the deployed image tag in exactly this env\'s SSM parameter', () => {
-    for (const [env, account] of [
-      ['staging', '853377042897'],
-      ['production', '216833405626'],
-    ] as const) {
+    for (const env of ['staging', 'production'] as const) {
+      const { account } = getConfig(env);
       const t = Template.fromStack(buildGraph(env).pipelineIam);
       t.hasResourceProperties('AWS::IAM::Policy', {
         PolicyDocument: {
@@ -160,10 +161,8 @@ describe('PipelineIamStack', () => {
   });
 
   it('lets app-deploy tag only this env\'s dad-* task definition revisions it registers', () => {
-    for (const [env, account] of [
-      ['staging', '853377042897'],
-      ['production', '216833405626'],
-    ] as const) {
+    for (const env of ['staging', 'production'] as const) {
+      const { account } = getConfig(env);
       const t = Template.fromStack(buildGraph(env).pipelineIam);
       t.hasResourceProperties('AWS::IAM::Policy', {
         PolicyDocument: {
@@ -181,10 +180,8 @@ describe('PipelineIamStack', () => {
   });
 
   it('lets app-deploy read only this env\'s dad-* stack outputs (deploy.yml resolves names from them)', () => {
-    for (const [env, account] of [
-      ['staging', '853377042897'],
-      ['production', '216833405626'],
-    ] as const) {
+    for (const env of ['staging', 'production'] as const) {
+      const { account } = getConfig(env);
       const t = Template.fromStack(buildGraph(env).pipelineIam);
       t.hasResourceProperties('AWS::IAM::Policy', {
         PolicyDocument: {

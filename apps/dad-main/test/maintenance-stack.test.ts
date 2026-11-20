@@ -58,7 +58,7 @@ describe('MaintenanceStack', () => {
             Sid: 'RunLatestReconcileRevision',
             Effect: 'Allow',
             Action: 'ecs:RunTask',
-            Condition: { ArnEquals: { 'ecs:cluster': Match.anyValue() } },
+            Condition: { ArnEquals: { 'ecs:cluster': { 'Fn::ImportValue': Match.stringLikeRegexp('^dad-ecs-cluster-staging:') } } },
           }),
         ]),
       },
@@ -76,7 +76,7 @@ describe('MaintenanceStack', () => {
     t.hasResourceProperties('AWS::CloudWatch::Alarm', {
       AlarmName: 'dad-staging-reconcile-nonzero-exit',
       ComparisonOperator: 'GreaterThanOrEqualToThreshold',
-      AlarmActions: Match.anyValue(),
+      AlarmActions: [{ 'Fn::ImportValue': Match.stringLikeRegexp('^dad-observability-staging:') }],
     });
   });
 
