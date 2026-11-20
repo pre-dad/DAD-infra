@@ -52,6 +52,7 @@ export class RunnerStack extends cdk.Stack {
 
     const { config, evidenceBucket, findingsTable, secrets } = props;
     const projectName = `${config.prefix}-runner-${config.env}`;
+    const [owner, repo] = config.githubRepo.split('/');
 
     this.logGroup = new logs.LogGroup(this, 'RunnerLogs', {
       logGroupName: `/aws/codebuild/${projectName}`,
@@ -68,7 +69,6 @@ export class RunnerStack extends cdk.Stack {
       description: `Least-privilege service role for ${projectName}.`,
     });
 
-    // Own log group only.
     role.addToPolicy(
       new iam.PolicyStatement({
         sid: 'OwnLogGroup',
@@ -84,7 +84,6 @@ export class RunnerStack extends cdk.Stack {
       }),
     );
 
-    // Read only the atm/<env>/* provider secrets.
     role.addToPolicy(
       new iam.PolicyStatement({
         sid: 'ReadProviderSecrets',
@@ -93,7 +92,6 @@ export class RunnerStack extends cdk.Stack {
       }),
     );
 
-    // Read/write only this env's evidence bucket (objects + bucket listing).
     role.addToPolicy(
       new iam.PolicyStatement({
         sid: 'EvidenceObjects',
@@ -114,7 +112,6 @@ export class RunnerStack extends cdk.Stack {
       }),
     );
 
-    // Read + conditional-write only this env's findings table and its GSI.
     role.addToPolicy(
       new iam.PolicyStatement({
         sid: 'FindingsLedger',
@@ -134,8 +131,8 @@ export class RunnerStack extends cdk.Stack {
       }),
     );
 
-    // Optional GitHub token, supplied per build by a StartBuild caller. The project
-    // carries only an empty placeholder; no stored CodeBuild GitHub connection.
+    // The empty placeholder is not a secret. A StartBuild caller must override it with
+    // type SECRETS_MANAGER or PARAMETER_STORE (the override default is PLAINTEXT).
     const environmentVariables: Record<string, codebuild.BuildEnvironmentVariable> = {
       [GITHUB_TOKEN_ENV_VAR]: {
         type: codebuild.BuildEnvironmentVariableType.PLAINTEXT,
@@ -158,12 +155,11 @@ export class RunnerStack extends cdk.Stack {
     this.project = new codebuild.Project(this, 'RunnerProject', {
       projectName,
       role,
-      // DAD-Main repo; the buildspec clones it at the revision under validation
-      // (--source-version from StartBuild, else the default branch). Any token is
-      // the optional per-build one above, never a stored credential.
+      // The buildspec clones DAD-Main at the revision under validation
+      // (--source-version from StartBuild, else the default branch).
       source: codebuild.Source.gitHub({
-        owner: config.githubRepo.split('/')[0],
-        repo: config.githubRepo.split('/')[1],
+        owner,
+        repo,
         // No webhook: runs are started explicitly via StartBuild (the schedule).
       }),
       environment: {
@@ -192,7 +188,7 @@ export class RunnerStack extends cdk.Stack {
 }
 
 /** Map a retention-day count to the matching CloudWatch RetentionDays enum. */
-function logRetention(days: number): logs.RetentionDays {
+export function logRetention(days: number): logs.RetentionDays {
   switch (days) {
     case 30:
       return logs.RetentionDays.ONE_MONTH;
@@ -201,6 +197,6 @@ function logRetention(days: number): logs.RetentionDays {
     case 365:
       return logs.RetentionDays.ONE_YEAR;
     default:
-      return logs.RetentionDays.ONE_MONTH;
+      throw new Error(`unsupported logRetentionDays: ${days}`);
   }
 }

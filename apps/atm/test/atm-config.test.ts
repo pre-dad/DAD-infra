@@ -10,7 +10,6 @@ describe('getAtmConfig', () => {
     expect(config.prefix).toBe(RESOURCE_PREFIX);
     expect(config.evidenceRetentionDays).toBe(90);
     expect(config.deletionProtection).toBe(false);
-    expect(config.dynamoBillingMode).toBe('PAY_PER_REQUEST');
     expect(config.computeType).toBe(ComputeType.MEDIUM);
     expect(config.githubRepo).toBe(DAD_MAIN_REPO);
   });

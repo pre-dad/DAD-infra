@@ -24,10 +24,8 @@ export const BY_STATUS_INDEX = 'by-status';
  * finding store. Findings are grouped by `(source repo, normalized signature)`
  * and updated with conditional writes so concurrent runs are safe.
  *
- *   - PK `source` holds `source#<repo>`
- *   - SK `finding` holds `finding#<normalized-signature>`
- *   - GSI `by-status` (PK `source`, SK `status`) services the
- *     "unresolved blocking findings for this source" query.
+ * The GSI `by-status` (PK `source`, SK `status`) services the "unresolved blocking
+ * findings for this source" query.
  *
  * On-demand billing (spiky commit-triggered load), PITR, SSE, and
  * deletion protection toggled per env.

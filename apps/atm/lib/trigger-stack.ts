@@ -67,6 +67,7 @@ export class TriggerStack extends cdk.Stack {
       target: {
         arn: project.projectArn,
         roleArn: this.schedulerRole.roleArn,
+        retryPolicy: { maximumRetryAttempts: 2, maximumEventAgeInSeconds: 3600 },
       },
     });
 
