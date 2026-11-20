@@ -78,11 +78,22 @@ export function buildDadApp(app: cdk.App, config: EnvConfig, env: cdk.Environmen
     },
   });
 
-  // 5. Maintenance — one-off task defs + scheduled reconcile + exit alarm.
+  // 5. Observability — SNS topic + ECS health + database alarms.
+  const observability = new ObservabilityStack(app, stackId('observability'), {
+    env,
+    config,
+    terminationProtection,
+    clusterName: ecsCluster.cluster.clusterName,
+    services: services.services,
+    database: data.instance,
+  });
+
+  // 6. Maintenance — one-off task defs + scheduled reconcile + exit alarm.
   const maintenance = new MaintenanceStack(app, stackId('maintenance'), {
     env,
     config,
     terminationProtection,
+    alarmTopic: observability.topic,
     vpc: network.vpc,
     computeSubnets: network.computeSubnets,
     cluster: ecsCluster.cluster,
@@ -102,7 +113,7 @@ export function buildDadApp(app: cdk.App, config: EnvConfig, env: cdk.Environmen
     },
   });
 
-  // 6. Edge — internet-facing NLB + Cloudflare SG toggle.
+  // 7. Edge — internet-facing NLB + Cloudflare SG toggle.
   const edge = new EdgeStack(app, stackId('edge'), {
     env,
     config,
@@ -112,16 +123,6 @@ export function buildDadApp(app: cdk.App, config: EnvConfig, env: cdk.Environmen
     nginxService: services.services.nginx,
     nginxSecurityGroup: network.nginxSecurityGroup,
     nlbSecurityGroup: network.nlbSecurityGroup,
-  });
-
-  // 7. Observability — SNS topic + ECS health + database alarms.
-  const observability = new ObservabilityStack(app, stackId('observability'), {
-    env,
-    config,
-    terminationProtection,
-    clusterName: ecsCluster.cluster.clusterName,
-    services: services.services,
-    database: data.instance,
   });
 
   // 8. Backup — production only: AWS Backup plan copying database backups to a second region.

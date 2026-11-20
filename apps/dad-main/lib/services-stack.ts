@@ -159,7 +159,6 @@ export class ServicesStack extends cdk.Stack {
 
     const trustedProxyCidrs = computeSubnetCidrs.join(',');
 
-    // --- api ------------------------------------------------------------
     const apiDb = db('api');
     const api = factory.build({
       id: 'api',
@@ -221,7 +220,6 @@ export class ServicesStack extends cdk.Stack {
       },
     });
 
-    // --- web ------------------------------------------------------------
     const web = factory.build({
       id: 'web',
       image: 'web',
@@ -271,7 +269,6 @@ export class ServicesStack extends cdk.Stack {
       },
     });
 
-    // --- nginx ----------------------------------------------------------
     const nginx = factory.build({
       id: 'nginx',
       image: 'nginx',
@@ -325,7 +322,6 @@ export class ServicesStack extends cdk.Stack {
       this.autoscale('nginx', this.services.nginx, config.autoscaling.nginx);
     }
 
-    // --- the six workers ------------------------------------------------
     const workers: WorkerSpec[] = [
       {
         service: 'stripe-worker',

@@ -6,10 +6,12 @@ import * as ecr from 'aws-cdk-lib/aws-ecr';
 import * as logs from 'aws-cdk-lib/aws-logs';
 import * as secretsmanager from 'aws-cdk-lib/aws-secretsmanager';
 import * as sns from 'aws-cdk-lib/aws-sns';
-import * as snsSubs from 'aws-cdk-lib/aws-sns-subscriptions';
 import * as cloudwatch from 'aws-cdk-lib/aws-cloudwatch';
 import * as cwActions from 'aws-cdk-lib/aws-cloudwatch-actions';
 import * as scheduler from 'aws-cdk-lib/aws-scheduler';
+import * as sqs from 'aws-cdk-lib/aws-sqs';
+import * as events from 'aws-cdk-lib/aws-events';
+import * as targets from 'aws-cdk-lib/aws-events-targets';
 import * as iam from 'aws-cdk-lib/aws-iam';
 import { EnvConfig } from './config';
 import { toRetentionDays } from './ecs-cluster-stack';
@@ -44,8 +46,8 @@ export interface MaintenanceStackProps extends cdk.StackProps {
   readonly masterSecret: secretsmanager.ISecret;
   /** RDS instance endpoint address, which the owner bootstrap connects to directly. */
   readonly databaseHost: string;
-  /** Optional existing SNS topic for alarms (else one is created). */
-  readonly alarmTopic?: sns.ITopic;
+  /** SNS topic that receives the reconcile alarms. */
+  readonly alarmTopic: sns.ITopic;
 }
 
 /**
@@ -64,7 +66,7 @@ export class MaintenanceStack extends cdk.Stack {
   public readonly taskDefinitions: Record<string, ecs.FargateTaskDefinition>;
   public readonly reconcileSchedule: scheduler.CfnSchedule;
   public readonly reconcileExitAlarm: cloudwatch.Alarm;
-  public readonly alarmTopic: sns.ITopic;
+  public readonly reconcileFailedToRunRule: events.Rule;
 
   constructor(scope: Construct, id: string, props: MaintenanceStackProps) {
     super(scope, id, props);
@@ -81,6 +83,7 @@ export class MaintenanceStack extends cdk.Stack {
       appSecrets,
       masterSecret,
       databaseHost,
+      alarmTopic,
     } = props;
 
     const factory = new TaskFactory(this, repositories, imageTagFor(this, config));
@@ -124,7 +127,6 @@ export class MaintenanceStack extends cdk.Stack {
       return taskDefinition;
     };
 
-    // --- five one-off maintenance task definitions ----------------------
     const ownerDb = db(OWNER_LOGIN);
     defineTask('migrate', ['migrate'], ownerDb.environment, ownerDb.secrets);
     defineTask('provision-roles', ['provision'], provisionDb.environment, provisionDb.secrets);
@@ -146,7 +148,6 @@ export class MaintenanceStack extends cdk.Stack {
     const monitorDb = db(PROCESS_LOGINS.monitor);
     defineTask('monitor', ['monitor'], monitorDb.environment, monitorDb.secrets);
 
-    // --- owner bootstrap (first deploy only; see docs/bootstrap.md) -------
     // Creates the `owner` role as the RDS master. The only task that can read the master
     // secret; run it with the data stack's BootstrapSecurityGroupId.
     this.taskDefinitions['bootstrap-owner'] = ownerBootstrapTaskDefinition(this, {
@@ -158,7 +159,6 @@ export class MaintenanceStack extends cdk.Stack {
       ownerSecret: loginSecrets[OWNER_LOGIN.login],
     });
 
-    // --- reconcile task definition --------------------------------------
     const reconcileDb = db(PROCESS_LOGINS.reconcile);
     const reconcileTask = defineTask(
       'reconcile',
@@ -167,24 +167,13 @@ export class MaintenanceStack extends cdk.Stack {
       { ...reconcileDb.secrets, ...secretFields(appSecrets.stripe, ['STRIPE_SECRET_KEY']) },
     );
 
-    // --- SNS topic for alarms -------------------------------------------
-    if (props.alarmTopic) {
-      this.alarmTopic = props.alarmTopic;
-    } else {
-      const topic = new sns.Topic(this, 'MaintenanceAlarms', {
-        topicName: `dad-${config.env}-maintenance-alarms`,
-        displayName: `DAD ${config.env} maintenance alarms`,
-      });
-      const email = this.node.tryGetContext('alarmEmail') as string | undefined;
-      if (email) {
-        topic.addSubscription(new snsSubs.EmailSubscription(email));
-      }
-      this.alarmTopic = topic;
-    }
-
-    // --- EventBridge Scheduler: reconcile daily ~00:30 America/New_York --
     const schedulerRole = new iam.Role(this, 'ReconcileSchedulerRole', {
-      assumedBy: new iam.ServicePrincipal('scheduler.amazonaws.com'),
+      assumedBy: new iam.ServicePrincipal('scheduler.amazonaws.com').withConditions({
+        StringEquals: { 'aws:SourceAccount': this.account },
+        ArnLike: {
+          'aws:SourceArn': this.formatArn({ service: 'scheduler', resource: 'schedule', resourceName: 'default/*' }),
+        },
+      }),
     });
     reconcileTask.grantRun(schedulerRole);
     // The schedule targets the task-definition FAMILY (an ARN with no revision), which
@@ -209,6 +198,13 @@ export class MaintenanceStack extends cdk.Stack {
 
     const subnets = vpc.selectSubnets(computeSubnets);
 
+    const scheduleDlq = new sqs.Queue(this, 'ReconcileScheduleDlq', {
+      queueName: `dad-${config.env}-reconcile-schedule-dlq`,
+      enforceSSL: true,
+      retentionPeriod: cdk.Duration.days(14),
+    });
+    scheduleDlq.grantSendMessages(schedulerRole);
+
     this.reconcileSchedule = new scheduler.CfnSchedule(
       this,
       'ReconcileSchedule',
@@ -221,6 +217,8 @@ export class MaintenanceStack extends cdk.Stack {
         target: {
           arn: cluster.clusterArn,
           roleArn: schedulerRole.roleArn,
+          retryPolicy: { maximumRetryAttempts: 2, maximumEventAgeInSeconds: 3600 },
+          deadLetterConfig: { arn: scheduleDlq.queueArn },
           ecsParameters: {
             taskDefinitionArn: reconcileFamilyArn,
             launchType: 'FARGATE',
@@ -237,12 +235,8 @@ export class MaintenanceStack extends cdk.Stack {
       },
     );
 
-    // --- CloudWatch alarm on non-zero reconcile exit --------------------
-    // A failed Fargate task surfaces as a stopped task; we alarm on the
-    // ECS "task stopped with non-zero exit" signal via a metric filter on the
-    // reconcile log group plus the ECS container-exit metric. Here we use a
-    // custom metric-filter-driven alarm on the reconcile log group for the
-    // discrepancy marker the reconcile job logs on non-zero exit.
+    // Matches only what the reconcile job logs; a task that never starts logs nothing, so
+    // reconcileFailedToRunRule below covers that case.
     const exitMetricFilter = log.addMetricFilter('ReconcileNonZeroExit', {
       filterName: `dad-${config.env}-reconcile-nonzero-exit`,
       metricNamespace: `DAD/${config.env}/Reconcile`,
@@ -270,8 +264,24 @@ export class MaintenanceStack extends cdk.Stack {
         cloudwatch.ComparisonOperator.GREATER_THAN_OR_EQUAL_TO_THRESHOLD,
       treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
     });
-    this.reconcileExitAlarm.addAlarmAction(
-      new cwActions.SnsAction(this.alarmTopic),
-    );
+    this.reconcileExitAlarm.addAlarmAction(new cwActions.SnsAction(alarmTopic));
+
+    this.reconcileFailedToRunRule = new events.Rule(this, 'ReconcileTaskFailedRule', {
+      description: 'Reconcile task stopped with a non-zero exit or never started.',
+      eventPattern: {
+        source: ['aws.ecs'],
+        detailType: ['ECS Task State Change'],
+        detail: {
+          clusterArn: [cluster.clusterArn],
+          lastStatus: ['STOPPED'],
+          taskDefinitionArn: [{ prefix: `${reconcileFamilyArn}:` }],
+          $or: [
+            { containers: { exitCode: [{ 'anything-but': 0 }] } },
+            { stopCode: ['TaskFailedToStart'] },
+          ],
+        },
+      },
+      targets: [new targets.SnsTopic(alarmTopic)],
+    });
   }
 }
