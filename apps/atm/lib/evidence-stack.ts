@@ -37,6 +37,8 @@ export class EvidenceStack extends cdk.Stack {
       removalPolicy: config.deletionProtection
         ? cdk.RemovalPolicy.RETAIN
         : cdk.RemovalPolicy.DESTROY,
+      // CloudFormation cannot delete a non-empty bucket.
+      autoDeleteObjects: !config.deletionProtection,
       lifecycleRules: [
         {
           id: 'expire-evidence',
@@ -46,7 +48,9 @@ export class EvidenceStack extends cdk.Stack {
           noncurrentVersionExpiration: cdk.Duration.days(
             config.evidenceRetentionDays,
           ),
+          abortIncompleteMultipartUploadAfter: cdk.Duration.days(7),
         },
+        { id: 'expire-delete-markers', enabled: true, expiredObjectDeleteMarker: true },
       ],
     });
 

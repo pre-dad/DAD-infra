@@ -112,14 +112,14 @@ export class AppSecretsStack extends cdk.Stack {
       'Optional browser OAuth exchange credentials. Empty fields keep browser social sign-in off.',
     );
 
-    for (const [id, s] of [
+    for (const [outputId, s] of [
       ['StripeSecretArn', this.stripe],
       ['EncryptionSecretArn', this.encryption],
       ['IngressTlsSecretArn', this.tls],
       ['SignInSecretArn', this.signIn],
       ['WebOAuthSecretArn', this.webOAuth],
     ] as const) {
-      new cdk.CfnOutput(this, id, { value: s.secretArn });
+      new cdk.CfnOutput(this, outputId, { value: s.secretArn });
     }
   }
 }

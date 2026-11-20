@@ -2,25 +2,23 @@ name: DAD-Main Infra (CDK)
 
 # Infrastructure pipeline for the apps/dad-main CDK app (network, data, ECS
 # cluster, services, maintenance, edge, observability, SES, pipeline IAM).
-# Extracted from DAD-Main/infra/.github/workflows/infra.yml: after the extraction
-# the CDK app lives here in the monorepo, so the infra pipeline runs from here.
 # The application rollout (ECR build/push + `aws ecs update-service`) stays
 # repo-local in DAD-Main's deploy.yml — it is not CDK. Deploys are path-filtered so
 # a change to this app or the shared packages deploys only this app, never the
 # other tenants in the monorepo.
 #
-# Flow (models DAD-Main/infra/.github/workflows/infra.yml):
+# Flow:
 #   - every PR (unfiltered, so the required `synth` check always reports)
 #                              -> offline `cdk synth` of both apps in BOTH envs (no AWS creds).
 #                                 This is the real PR signal.
-#   - push to dev              -> `cdk deploy -c env=staging`  (sandbox 853377042897).
-#   - push to main             -> `cdk deploy -c env=production` (216833405626),
+#   - push to dev              -> `cdk deploy -c env=staging`.
+#   - push to main             -> `cdk deploy -c env=production`,
 #                                 gated by the `production` GitHub Environment
 #                                 (configure a manual-approval protection rule there).
 #
 # Auth is GitHub OIDC assuming the pipeline-iam deploy role (no static keys). The
-# role ARN is read from a GitHub Environment variable (vars.INFRA_DEPLOY_ROLE_ARN)
-# so account ids are not hardcoded here. Credentialed jobs are gated on that
+# role ARN is read from a GitHub Environment variable (vars.INFRA_DEPLOY_ROLE_ARN);
+# account ids live in packages/config. Credentialed jobs are gated on that
 # variable being set: before the account is bootstrapped the variable is unset, so
 # the deploy jobs are skipped (green) and the offline synth stays the only signal.
 # Region is us-east-2.

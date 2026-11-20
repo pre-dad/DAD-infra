@@ -3,9 +3,6 @@
   "version": "0.1.0",
   "private": true,
   "description": "DAD-Main AWS CDK app: network, data, ECS cluster, services, maintenance, edge, observability, SES, pipeline IAM.",
-  "bin": {
-    "dad-main": "bin/dad-infra.ts"
-  },
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
     "test": "jest",

@@ -2,17 +2,13 @@
  * atm-specific environment configuration.
  *
  * Imports the shared DAD account/region core from `@dad-infra/config` and
- * extends it with the fields the ATM-on-AWS stacks need: resource-name prefix,
- * evidence retention, CodeBuild sizing + timeout, DynamoDB billing, deletion
- * protection, and the DAD-Main GitHub repo slug the runner clones.
+ * extends it with the fields the ATM-on-AWS stacks need (see docs/design/aws-infra-design.md).
  *
- * Resolved design decisions (see docs/design/aws-infra-design.md and the task
- * build note):
- *   - evidence retention: staging 90 days, production 365 days
- *   - DynamoDB billing: on-demand (PAY_PER_REQUEST) — spiky commit-triggered load
- *   - GitHub read for the CodeBuild clone: an optional GITHUB_APP_TOKEN supplied by
- *     whoever calls StartBuild (NOT a stored CodeBuild GitHub connection). Scheduled
- *     runs supply none and clone anonymously, which works only while DAD-Main is public.
+ * GitHub read for the CodeBuild clone is an optional GITHUB_APP_TOKEN supplied by
+ * whoever calls StartBuild, NOT a stored CodeBuild GitHub connection. A caller must
+ * override it with type SECRETS_MANAGER or PARAMETER_STORE: StartBuild overrides default to
+ * PLAINTEXT, which would expose the value in the build record. Scheduled runs supply none
+ * and clone anonymously, which works only while DAD-Main is public.
  */
 import {
   type EnvConfig as SharedEnvConfig,
@@ -31,7 +27,6 @@ export const RESOURCE_PREFIX = 'atm';
 
 /** Fully-resolved atm configuration for a single environment. */
 export interface AtmEnvConfig extends SharedEnvConfig {
-  /** Resource-name prefix (`atm`). */
   readonly prefix: string;
   /** S3 evidence object-expiry window, in days. */
   readonly evidenceRetentionDays: number;
@@ -39,13 +34,9 @@ export interface AtmEnvConfig extends SharedEnvConfig {
   readonly logRetentionDays: number;
   /** CodeBuild compute size for the runner. */
   readonly computeType: codebuild.ComputeType;
-  /** CodeBuild build timeout. */
   readonly buildTimeout: Duration;
-  /** DynamoDB billing mode (on-demand). */
-  readonly dynamoBillingMode: 'PAY_PER_REQUEST';
   /** Whether stateful resources carry deletion protection. */
   readonly deletionProtection: boolean;
-  /** DAD-Main GitHub `owner/repo` slug the runner clones. */
   readonly githubRepo: string;
 }
 
@@ -89,7 +80,6 @@ export function getAtmConfig(env?: string): AtmEnvConfig {
     logRetentionDays: overrides.logRetentionDays,
     computeType: overrides.computeType,
     buildTimeout: overrides.buildTimeout,
-    dynamoBillingMode: 'PAY_PER_REQUEST',
     deletionProtection: overrides.deletionProtection,
     githubRepo: DAD_MAIN_REPO,
   };

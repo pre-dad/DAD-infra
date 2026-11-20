@@ -35,6 +35,13 @@ describe('SecretsStack', () => {
     });
   });
 
+  test('production retains the secrets and staging deletes them', () => {
+    const prod = synth('production').findResources('AWS::SecretsManager::Secret');
+    expect(Object.values(prod).map((r) => r.DeletionPolicy)).toEqual(['Retain', 'Retain']);
+    const staging = synth('staging').findResources('AWS::SecretsManager::Secret');
+    expect(Object.values(staging).map((r) => r.DeletionPolicy)).toEqual(['Delete', 'Delete']);
+  });
+
   test('no rotation schedule is configured', () => {
     const template = synth('staging');
     template.resourceCountIs('AWS::SecretsManager::RotationSchedule', 0);

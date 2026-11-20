@@ -39,8 +39,10 @@ these; this file only adds what they do not say.
 
 ```sh
 npm ci
+npm run test:security
 npm run build
 npx jest --ci --maxWorkers=2 --workerIdleMemoryLimit=1024MB   # needs python3
+npm run test:cloudflare
 cd apps/dad-main   # and apps/atm
 CDK_DEFAULT_ACCOUNT=000000000000 CDK_DEFAULT_REGION=us-east-2 npx cdk synth -c env=staging >/dev/null
 CDK_DEFAULT_ACCOUNT=000000000000 CDK_DEFAULT_REGION=us-east-2 npx cdk synth -c env=production >/dev/null

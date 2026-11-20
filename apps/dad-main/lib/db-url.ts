@@ -1,7 +1,7 @@
 /**
  * PostgreSQL connection-URL builder and the per-process login → env-var map.
  *
- * Confirmed from .env.database.example and docs/operations.md:
+ * Per .env.database.example and docs/operations.md:
  *   - Every process connects through the RDS Proxy (transaction-mode pooler)
  *     on port 5432, which requires `default_query_exec_mode=exec`.
  *   - TLS is enforced end-to-end with `sslmode=verify-full`.
@@ -38,7 +38,7 @@ export const DB_URL_QUERY_STRING =
 /**
  * Build a per-process PostgreSQL connection URL pointing at the RDS Proxy.
  *
- * Shape (confirmed):
+ * Shape:
  *   postgresql://<login>:<password>@<proxyEndpoint>:5432/<db>?default_query_exec_mode=exec&sslmode=verify-full
  */
 export function buildDatabaseUrl(parts: DatabaseUrlParts): string {

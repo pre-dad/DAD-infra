@@ -70,9 +70,9 @@ describe('MaintenanceStack', () => {
     expect(JSON.stringify(statement?.Resource)).toContain('task-definition/dad-maint-reconcile:*');
   });
 
-  it('alarms on a non-zero reconcile exit and notifies SNS', () => {
+  it('alarms on a non-zero reconcile exit and notifies the shared alarm topic', () => {
     const t = Template.fromStack(buildGraph('staging').maintenance);
-    t.resourceCountIs('AWS::SNS::Topic', 1);
+    t.resourceCountIs('AWS::SNS::Topic', 0);
     t.hasResourceProperties('AWS::CloudWatch::Alarm', {
       AlarmName: 'dad-staging-reconcile-nonzero-exit',
       ComparisonOperator: 'GreaterThanOrEqualToThreshold',
@@ -80,13 +80,49 @@ describe('MaintenanceStack', () => {
     });
   });
 
-  it('subscribes the alarm email to its own topic when one is configured', () => {
-    const t = Template.fromStack(
-      buildGraph('staging', {}, { alarmEmail: 'ops@example.org' }).maintenance,
-    );
-    t.hasResourceProperties('AWS::SNS::Subscription', {
-      Protocol: 'email',
-      Endpoint: 'ops@example.org',
+  it('alerts when a reconcile task stops non-zero or never starts, even with no logs', () => {
+    const t = Template.fromStack(buildGraph('staging').maintenance);
+    t.hasResourceProperties('AWS::Events::Rule', {
+      EventPattern: Match.objectLike({
+        source: ['aws.ecs'],
+        'detail-type': ['ECS Task State Change'],
+        detail: Match.objectLike({
+          lastStatus: ['STOPPED'],
+          $or: [
+            { containers: { exitCode: [{ 'anything-but': 0 }] } },
+            { stopCode: ['TaskFailedToStart'] },
+          ],
+        }),
+      }),
+      Targets: [Match.objectLike({ Arn: Match.anyValue() })],
+    });
+  });
+
+  it('retries a failed schedule invocation twice and dead-letters it', () => {
+    const t = Template.fromStack(buildGraph('staging').maintenance);
+    t.hasResourceProperties('AWS::Scheduler::Schedule', {
+      Target: Match.objectLike({
+        RetryPolicy: { MaximumRetryAttempts: 2, MaximumEventAgeInSeconds: 3600 },
+        DeadLetterConfig: { Arn: Match.anyValue() },
+      }),
+    });
+    t.resourceCountIs('AWS::SQS::Queue', 1);
+  });
+
+  it('only lets schedules from this account assume the scheduler role', () => {
+    const t = Template.fromStack(buildGraph('staging').maintenance);
+    t.hasResourceProperties('AWS::IAM::Role', {
+      AssumeRolePolicyDocument: {
+        Statement: [
+          Match.objectLike({
+            Principal: { Service: 'scheduler.amazonaws.com' },
+            Condition: {
+              StringEquals: { 'aws:SourceAccount': '111111111111' },
+              ArnLike: { 'aws:SourceArn': Match.anyValue() },
+            },
+          }),
+        ],
+      },
     });
   });
 });

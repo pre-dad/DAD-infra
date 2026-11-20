@@ -128,9 +128,11 @@ runs the same tests and synth on every PR.
 
 ```sh
 # from the repo root
-npm install
+npm ci
+npm run test:security
 npm run build
 npx jest   # all workspaces; also runs the rotation function's Python tests (needs python3)
+npm run test:cloudflare
 
 # per-app offline synth (dummy account/region), for apps/dad-main and apps/atm
 cd apps/dad-main

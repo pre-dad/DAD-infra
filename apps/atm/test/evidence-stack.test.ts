@@ -65,6 +65,30 @@ describe('EvidenceStack', () => {
     });
   });
 
+  test('cleans up incomplete uploads, old versions and delete markers', () => {
+    const template = synth('production');
+    template.hasResourceProperties('AWS::S3::Bucket', {
+      LifecycleConfiguration: {
+        Rules: Match.arrayWith([
+          Match.objectLike({
+            AbortIncompleteMultipartUpload: { DaysAfterInitiation: 7 },
+            NoncurrentVersionExpiration: { NoncurrentDays: 365 },
+          }),
+          Match.objectLike({ ExpiredObjectDeleteMarker: true }),
+        ]),
+      },
+    });
+  });
+
+  test('production retains the bucket; staging deletes it, emptying it first', () => {
+    const prod = synth('production');
+    expect(Object.values(prod.findResources('AWS::S3::Bucket'))[0].DeletionPolicy).toBe('Retain');
+    prod.resourceCountIs('Custom::S3AutoDeleteObjects', 0);
+    const staging = synth('staging');
+    expect(Object.values(staging.findResources('AWS::S3::Bucket'))[0].DeletionPolicy).toBe('Delete');
+    staging.resourceCountIs('Custom::S3AutoDeleteObjects', 1);
+  });
+
   test('enforces TLS with a deny-insecure-transport bucket policy', () => {
     const template = synth('staging');
     template.hasResourceProperties('AWS::S3::BucketPolicy', {
