@@ -18,7 +18,7 @@ manual steps between them.
 ### Pin the region and account before deploying
 
 Export the profile and region first, for example
-`export AWS_PROFILE=<profile> AWS_REGION=us-east-2 AWS_DEFAULT_REGION=us-east-2`. The
+`export AWS_PROFILE="$PROFILE_NAME" AWS_REGION=us-east-2 AWS_DEFAULT_REGION=us-east-2`, where `PROFILE_NAME` is a profile from `aws configure list-profiles`. The
 `cdk` CLI sets `CDK_DEFAULT_ACCOUNT` and `CDK_DEFAULT_REGION` from the profile, which
 overrides the dummy values used for offline synth, and the stacks hardcode `us-east-2`
 zones. Before any deploy, synthesize from `apps/dad-main` (the only directory with a
@@ -30,8 +30,8 @@ npx cdk synth -c env=$ENV -q --output /tmp/dad-synth
 grep -o 'aws://[0-9]*/[a-z0-9-]*' /tmp/dad-synth/manifest.json | sort -u
 ```
 
-Staging should show exactly `aws://<staging-account>/us-east-2`. Production should show
-exactly `aws://<prod-account>/us-east-2` and `aws://<prod-account>/us-west-2` (the
+Staging should show exactly `aws://853377042897/us-east-2`. Production should show
+exactly `aws://216833405626/us-east-2` and `aws://216833405626/us-west-2` (the
 cross-region backup vault, `dad-dr-vault-production`).
 
 ## Steps
@@ -39,14 +39,15 @@ cross-region backup vault, `dad-dr-vault-production`).
 ### 1. CDK bootstrap the account
 
 ```sh
-npx cdk bootstrap "aws://<account-id>/us-east-2"
+ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+npx cdk bootstrap "aws://$ACCOUNT_ID/us-east-2"
 ```
 
 For production, also bootstrap the disaster-recovery region (the cross-region backup
 vault deploys there; see [disaster-recovery.md](disaster-recovery.md)):
 
 ```sh
-npx cdk bootstrap "aws://<account-id>/us-west-2"
+npx cdk bootstrap "aws://$ACCOUNT_ID/us-west-2"
 ```
 
 ### 2. Deploy the foundation stacks
@@ -78,12 +79,15 @@ deploy:
 
 ```sh
 TAG=$(git rev-parse HEAD)
-REGISTRY=<account-id>.dkr.ecr.us-east-2.amazonaws.com
+ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+PUBLIC_ORIGIN="https://donate.example.org"   # set to the real public origin
+STAFF_ORIGIN="https://staff.example.org"     # set to the real staff origin
+REGISTRY="$ACCOUNT_ID.dkr.ecr.us-east-2.amazonaws.com"
 aws ecr get-login-password --region us-east-2 | docker login --username AWS --password-stdin "$REGISTRY"
 docker build -t "$REGISTRY/dad/api:$TAG" -f apps/donor-api/Dockerfile .
 docker build -t "$REGISTRY/dad/web:$TAG" \
-  --build-arg DONOR_PUBLIC_ORIGIN=<public origin> \
-  --build-arg DONOR_STAFF_ORIGIN=<staff origin> \
+  --build-arg DONOR_PUBLIC_ORIGIN="$PUBLIC_ORIGIN" \
+  --build-arg DONOR_STAFF_ORIGIN="$STAFF_ORIGIN" \
   -f apps/web/Dockerfile .
 docker build -t "$REGISTRY/dad/nginx:$TAG" deploy/nginx
 docker push "$REGISTRY/dad/api:$TAG"
@@ -152,6 +156,8 @@ deploy the app-secrets stack before updating services so the new secrets exist.
 
 ### 6. Deploy the maintenance stack and prepare the database
 
+From `apps/dad-main` in DAD-infra:
+
 ```sh
 npx cdk deploy -c env=$ENV dad-maintenance-$ENV
 ```
@@ -160,10 +166,14 @@ Then, from DAD-Main, with the cluster, compute subnets and workers security grou
 the `dad-ecs-cluster-$ENV` and `dad-network-$ENV` outputs:
 
 ```sh
-export DAD_CLUSTER=<ClusterName> DAD_SUBNETS=<ComputeSubnetIds> \
-  DAD_SECURITY_GROUPS=<WorkersSecurityGroupId> AWS_REGION=us-east-2
+output() { aws cloudformation describe-stacks --stack-name "$1" \
+  --query "Stacks[0].Outputs[?OutputKey=='$2'].OutputValue" --output text; }
+export DAD_CLUSTER="$(output "dad-ecs-cluster-$ENV" ClusterName)" \
+  DAD_SUBNETS="$(output "dad-network-$ENV" ComputeSubnetIds)" \
+  DAD_SECURITY_GROUPS="$(output "dad-network-$ENV" WorkersSecurityGroupId)" \
+  AWS_REGION=us-east-2
 # Once: create the `owner` role, as the RDS master, directly against the instance.
-DAD_SECURITY_GROUPS=<BootstrapSecurityGroupId from dad-data-$ENV> \
+DAD_SECURITY_GROUPS="$(output "dad-data-$ENV" BootstrapSecurityGroupId)" \
   scripts/run-task.sh $ENV bootstrap-owner
 scripts/run-task.sh $ENV migrate
 scripts/run-task.sh $ENV provision-roles
@@ -182,6 +192,8 @@ Each task waits and fails unless it exits 0. Without `DAD_TASKDEFS_FILE` they ru
 the latest revision, which CDK just created at `$TAG`.
 
 ### 7. Deploy the services and the edge
+
+From `apps/dad-main` in DAD-infra:
 
 ```sh
 npx cdk deploy -c env=$ENV \

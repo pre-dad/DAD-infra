@@ -10,8 +10,8 @@
     "test": "jest"
   },
   "peerDependencies": {
-    "aws-cdk-lib": "2.275.0",
-    "constructs": "10.8.1"
+    "aws-cdk-lib": "^2.275.0",
+    "constructs": "^10.8.1"
   },
   "devDependencies": {
     "@types/jest": "29.5.14",
