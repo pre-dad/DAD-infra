@@ -27,11 +27,15 @@ test('Jest preset merging preserves nested values, array concatenation and sourc
   assert.deepEqual(preset.compiler.paths, ['preset']);
 });
 
-test('CDK resolves the patched minimatch and preserves ordinary asset globs', () => {
+test('CDK bundles a patched minimatch and preserves ordinary asset globs', () => {
   const path = require('node:path');
   const cdk = path.dirname(require.resolve('aws-cdk-lib/package.json'));
   const fixed = require(path.join(cdk, 'node_modules/minimatch'));
-  assert.equal(require(path.join(cdk, 'node_modules/minimatch/package.json')).version, '11.0.1');
+  const [major, minor, patch] = require(path.join(cdk, 'node_modules/minimatch/package.json'))
+    .version.split('.')
+    .map(Number);
+  // 11.0.9 fixes GHSA-g3hv-75wg-m249 and GHSA-cf2h-pxjq-68xw.
+  assert.ok(major > 11 || (major === 11 && (minor > 0 || patch >= 9)), 'CDK bundles a vulnerable minimatch');
   assert.equal(fixed.minimatch('assets/image.png', 'assets/**/*.png'), true);
   assert.equal(fixed.minimatch('assets/image.svg', 'assets/**/*.png'), false);
 });
