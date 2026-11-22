@@ -24,15 +24,20 @@ export class SecretsStack extends cdk.Stack {
     super(scope, id, props);
 
     const { config } = props;
+    const removalPolicy = config.deletionProtection
+      ? cdk.RemovalPolicy.RETAIN
+      : cdk.RemovalPolicy.DESTROY;
 
     this.openai = new secretsmanager.Secret(this, 'OpenAiKey', {
       secretName: `${config.prefix}/${config.env}/openai`,
       description: `OpenAI API key for ATM AI exploration (${config.env}).`,
+      removalPolicy,
     });
 
     this.tinker = new secretsmanager.Secret(this, 'TinkerKey', {
       secretName: `${config.prefix}/${config.env}/tinker`,
       description: `Tinker API key for ATM AI exploration (${config.env}).`,
+      removalPolicy,
     });
 
     new cdk.CfnOutput(this, 'OpenAiSecretArn', {

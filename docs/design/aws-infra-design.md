@@ -65,7 +65,7 @@ From the AWS Organization (SSO access portal):
 | `production`     | `216833405626` | `-c env=production` deploy target.                 |
 | `sandbox`        | `853377042897` | `-c env=staging` deploy target.                    |
 
-Region is **us-east-2 (Ohio)** for everything, matching DAD-Main.
+Region is **us-east-2 (Ohio)**, matching DAD-Main, plus us-west-2 for the production DR backup vault.
 
 Environment selection mirrors DAD-Main exactly: `-c env=staging|production`
 (default `staging`), account/region resolved from a typed config, with
@@ -102,10 +102,10 @@ infra repo is scoped deliberately rather than "everything DAD."
 
 ---
 
-## 4. Proposed repository layout
+## 4. Repository layout
 
-One repo, one shared config/pipeline core, one CDK app per tenant, CI path-filtered
-so a change to one tenant does not synth the other.
+One repo, one shared config/pipeline core, one CDK app per tenant. Deploys are
+path-filtered, so a change to one tenant does not deploy the other.
 
 ```
 DAD-infra/
@@ -118,7 +118,7 @@ DAD-infra/
   docs/
     design/          # this document
   .github/
-    workflows/       # per-app, path-filtered infra pipelines
+    workflows/       # dad-main-infra.yml: PR synth of both apps, path-filtered deploys
 ```
 
 Design principles:
@@ -132,8 +132,9 @@ Design principles:
   if ATM created its own in a separate repo they would collide. `packages/pipeline-iam`
   owns the provider once; each app contributes its own scoped deploy roles.
 - **App isolation.** Each app is its own CDK app (own `cdk.json`, own stack graph).
-  CI uses path filters (`apps/atm/**`, `apps/dad-main/**`, `packages/**`) so ATM
-  changes never trigger a DAD-Main synth/deploy and vice versa.
+  The PR `synth` job is unfiltered and synthesizes both apps, because a required check
+  must always report. Deploys are path-filtered (`apps/dad-main/**`, `packages/**`), so
+  ATM changes never trigger a DAD-Main deploy. `apps/atm` has no deploy job.
 
 ---
 
@@ -207,63 +208,6 @@ not mistaken for inconsistency.
   bucket prefix, and read/conditional-write the DynamoDB table — nothing else.
   The scheduler's role is allowed only `codebuild:StartBuild` on the project.
 
-### 6.5 Trigger and source acquisition — scheduled runs; CI-triggered runs deferred
-
-> **Status (2026-10-29): held, not deployed.** DAD-Main's ATM acceptance gate and its
-> Cloudflare Worker ledger are the single source of truth for findings. That ledger
-> accepts only GitHub OIDC tokens from `pre-dad/DAD-Main` on GitHub-hosted runners and
-> binds every receipt to a GitHub Actions run (`run_id:run_attempt`) and its evidence
-> artifact (`apps/atm-ledger/src/auth.ts`, `ledger.ts`). A CodeBuild run has neither, so
-> this runner cannot publish to it, and deploying it alone would create a second,
-> disconnected findings store (its DynamoDB table). `apps/atm` stays built and tested;
-> `atm-infra.yml` has no deploy jobs. Revisit only for a need GitHub-hosted runs cannot
-> meet (e.g. longer than the gate's job limit, or heavy AI exploration); then a GitHub
-> job would start the run, collect its evidence as an artifact and publish with its own
-> token, leaving the ledger's trust model unchanged. The rest of this section describes
-> the runner as built. DAD-Docs ADR 0006.
-
-**Decision: v1 runs are started by EventBridge Scheduler. Nothing in DAD-Main's CI
-starts them.** No AWS-side webhook or public ingress.
-
-**Source acquisition:** the runner clones DAD-Main itself; the buildspec checks out the
-revision under validation (`--source-version` from `StartBuild`, otherwise the default
-branch). DAD-Main is a public repository, so a scheduled run clones anonymously. A caller
-of `StartBuild` may supply `GITHUB_APP_TOKEN` to authenticate the clone. This breaks
-for scheduled runs if DAD-Main ever becomes private; a stored read-only credential would
-then be needed. (Not verified: that CodeBuild's own GitHub source needs no credential for
-a public repository.) Rejected alternative: DAD-Main CI builds a source archive and hands
-it to ATM. ATM already resolves and archives committed source itself, so that would
-duplicate or bypass it.
-
-**Why CI-triggered runs are deferred.** An earlier revision of this document had DAD-Main's
-CI start each commit-driven run through a `codebuild:StartBuild` OIDC role. That was
-removed because DAD-Main already has an ATM acceptance gate (`atm.yml`) with its own
-durable findings ledger (a Cloudflare Worker, `apps/atm-ledger`), and that installation
-is documented as authoritative. A CI-started AWS run would write to the DynamoDB ledger
-(§6.3), which that gate never reads, so findings would live in two disconnected places.
-Settle first whether AWS runs *complement* the gate (nightly and heavier runs, their own
-ledger) or *integrate* with the Worker ledger. Then wire CI:
-
-- a DAD-Main workflow job that assumes a `StartBuild` role. If the job runs under a
-  GitHub Environment the OIDC `sub` is the environment form, otherwise the branch form;
-  the role must trust the one the job actually produces;
-- the role also needs `codebuild:BatchGetBuilds` on the project for the job to wait for
-  the result;
-- an account has exactly one GitHub OIDC provider. `apps/dad-main`'s `pipeline-iam` stack
-  owns it, and `apps/atm` must not create another.
-
-End-to-end path (v1):
-
-```
-EventBridge Scheduler (nightly) → codebuild:StartBuild atm-runner-<env>
-CodeBuild (privileged Docker)
-  → clone DAD-Main @ default-branch HEAD
-  → npm run atm -- run --repo <checkout> --revision <sha>
-  → capture ATM exit code
-  → post-run sync: evidence → S3, findings → DynamoDB (conditional writes)
-  → exit with ATM's code
-```
-
 ### 6.3 Finding-ledger decision — DynamoDB
 
 **Decision: DynamoDB for the finding ledger; S3 for evidence.**
@@ -319,6 +263,63 @@ Honest caveat: even the wrapper is **a code change that lives in the atm repo**
 implementation plan tracks it as an atm-repo item distinct from the DAD-infra
 CDK items.
 
+### 6.5 Trigger and source acquisition — scheduled runs; CI-triggered runs deferred
+
+> **Status (2026-10-29): held, not deployed.** DAD-Main's ATM acceptance gate and its
+> Cloudflare Worker ledger are the single source of truth for findings. That ledger
+> accepts only GitHub OIDC tokens from `pre-dad/DAD-Main` on GitHub-hosted runners and
+> binds every receipt to a GitHub Actions run (`run_id:run_attempt`) and its evidence
+> artifact (`apps/atm-ledger/src/auth.ts`, `ledger.ts`). A CodeBuild run has neither, so
+> this runner cannot publish to it, and deploying it alone would create a second,
+> disconnected findings store (its DynamoDB table). `apps/atm` stays built and tested;
+> no workflow deploys it. Revisit only for a need GitHub-hosted runs cannot
+> meet (e.g. longer than the gate's job limit, or heavy AI exploration); then a GitHub
+> job would start the run, collect its evidence as an artifact and publish with its own
+> token, leaving the ledger's trust model unchanged. The rest of this section describes
+> the runner as built. DAD-Docs ADR 0006.
+
+**Decision: v1 runs are started by EventBridge Scheduler. Nothing in DAD-Main's CI
+starts them.** No AWS-side webhook or public ingress.
+
+**Source acquisition:** the runner clones DAD-Main itself; the buildspec checks out the
+revision under validation (`--source-version` from `StartBuild`, otherwise the default
+branch). DAD-Main is a public repository, so a scheduled run clones anonymously. A caller
+of `StartBuild` may supply `GITHUB_APP_TOKEN` to authenticate the clone. This breaks
+for scheduled runs if DAD-Main ever becomes private; a stored read-only credential would
+then be needed. (Not verified: that CodeBuild's own GitHub source needs no credential for
+a public repository.) Rejected alternative: DAD-Main CI builds a source archive and hands
+it to ATM. ATM already resolves and archives committed source itself, so that would
+duplicate or bypass it.
+
+**Why CI-triggered runs are deferred.** There is no `codebuild:StartBuild` OIDC role for
+DAD-Main's CI. DAD-Main already has an ATM acceptance gate (`atm.yml`) with its own
+durable findings ledger (a Cloudflare Worker, `apps/atm-ledger`), and that installation
+is documented as authoritative. A CI-started AWS run would write to the DynamoDB ledger
+(§6.3), which that gate never reads, so findings would live in two disconnected places.
+Settle first whether AWS runs *complement* the gate (nightly and heavier runs, their own
+ledger) or *integrate* with the Worker ledger. Then wire CI:
+
+- a DAD-Main workflow job that assumes a `StartBuild` role. If the job runs under a
+  GitHub Environment the OIDC `sub` is the environment form, otherwise the branch form;
+  the role must trust the one the job actually produces;
+- the role also needs `codebuild:BatchGetBuilds` on the project for the job to wait for
+  the result;
+- an account has exactly one GitHub OIDC provider. `apps/dad-main`'s `pipeline-iam` stack
+  owns it, and `apps/atm` must not create another.
+
+End-to-end path (v1):
+
+```
+EventBridge Scheduler (nightly) → codebuild:StartBuild atm-runner-<env>
+CodeBuild (privileged Docker)
+  → clone DAD-Main @ default-branch HEAD
+  → npm run atm -- run --repo <checkout> --revision <sha>
+  → capture ATM exit code
+  → post-run sync: evidence → S3, findings → DynamoDB (conditional writes)
+  → exit with ATM's code
+```
+
+
 ---
 
 ## 7. DAD-Main extraction
@@ -344,8 +345,8 @@ The extraction is complete: DAD-Main's CDK app is `apps/dad-main`.
 
 ## 8. Security and cost posture
 
-- **No deploy until the team is ready.** The estate stays offline-verified and
-  parked to avoid AWS charges, exactly as DAD-Main's infra is today.
+- **Deploys are owner-approved.** The estate is built and verified offline; nothing
+  deploys until the owner runs the steps in [bootstrap.md](../bootstrap.md).
 - **Least privilege.** CodeBuild's role is scoped to its own S3 prefix, its
   DynamoDB table, and its named secrets. No broad `*` on data stores.
 - **Evidence is private.** Bucket has Block Public Access, SSE, and lifecycle
@@ -353,7 +354,7 @@ The extraction is complete: DAD-Main's CDK app is `apps/dad-main`.
   session cookies in traces). No public report hosting in v1.
 - **AI keys isolated.** Provider keys live in Secrets Manager, enter the runner
   only when AI is explicitly enabled, and never reach application containers.
-- **Cost controls to decide at implementation:** CodeBuild compute size + build
+- **Cost controls (open, see §10):** CodeBuild compute size + build
   timeout, S3 lifecycle expiry window, DynamoDB on-demand vs. provisioned
   (on-demand likely, given spiky commit-triggered load).
 
@@ -378,31 +379,15 @@ ledger decision in ADR 0006.
 
 ---
 
-## 10. Decisions and remaining open questions
+## 10. Open questions
 
-### Resolved
-
-1. **Extraction timing — RESOLVED.** Scaffold shared packages now, stand up
-   DAD-Quality first, then extract DAD-Main. Both are in scope for this effort
-   (worked through together), DAD-Quality leading. (§9)
-2. **Commit trigger + source acquisition — REVISED.** v1 is scheduled-only. The
-   CI-triggered `StartBuild` role was removed until it is decided how AWS runs relate to
-   DAD-Main's existing ATM gate and its ledger. No AWS-side webhook. (§6.5)
-3. **ATM concurrency — RESOLVED.** Allow concurrent runs; DynamoDB conditional
-   writes make the ledger concurrency-safe. (§6.3)
-
-### Still open
-
-4. **"DAAD-website" spelling.** Confirm the double-A is intentional and not a typo
+1. **"DAAD-website" spelling.** Confirm the double-A is intentional and not a typo
    of the "DAD-" prefix used everywhere else.
-5. **Evidence retention window.** How long to keep run evidence in S3 before
+2. **Evidence retention window.** How long to keep run evidence in S3 before
    lifecycle expiry? (ATM's local retention is manual; cloud should be explicit —
    propose a concrete default in the plan, e.g. 90 days staging / longer production.)
-6. **GitHub read for the CodeBuild clone.** Scheduled runs clone anonymously while
+3. **GitHub read for the CodeBuild clone.** Scheduled runs clone anonymously while
    DAD-Main is public (§6.5). If it becomes private, decide between a stored read-only
    credential and a minted short-lived App token.
-7. **Website as a future tenant.** Leave out entirely, or add a tracking stub for
+4. **Website as a future tenant.** Leave out entirely, or add a tracking stub for
    when its Lightsail/DNS resources become IaC-managed?
-8. **How AWS runs relate to DAD-Main's ATM gate and ledger — RESOLVED.** One ledger: the
-   Worker ledger stays authoritative and the AWS runner is held, not deployed (§6.5,
-   DAD-Docs ADR 0006).

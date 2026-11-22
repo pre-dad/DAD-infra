@@ -1,4 +1,5 @@
 import { execFileSync } from 'child_process';
+import * as fs from 'fs';
 import * as path from 'path';
 import { Template } from 'aws-cdk-lib/assertions';
 import { MAIL_WORKER_SERVICES } from '../lib/ecs-cluster-stack';
@@ -40,11 +41,13 @@ describe('SMTP credential rotation', () => {
   });
 
   it('gives the function only the SMTP user\'s keys and the mail workers', () => {
-    const t = Template.fromStack(buildGraph('staging').ses);
+    const { config, ses } = buildGraph('staging');
+    const t = Template.fromStack(ses);
     const statements = Object.values(t.findResources('AWS::IAM::Policy') as Record<string, Res>)
       .filter((p) => JSON.stringify(p.Properties.Roles ?? []).includes('SmtpRotation'))
       .flatMap((p) => p.Properties.PolicyDocument.Statement as Array<Record<string, any>>);
     const bySid = Object.fromEntries(statements.filter((s) => s.Sid).map((s) => [s.Sid, s]));
+    expect(Object.keys(bySid).sort()).toEqual(['RestartMailWorkers', 'RotateSmtpUserKeys']);
     expect([...bySid.RotateSmtpUserKeys.Action].sort()).toEqual([
       'iam:CreateAccessKey',
       'iam:DeleteAccessKey',
@@ -54,7 +57,7 @@ describe('SMTP credential rotation', () => {
     expect([...bySid.RestartMailWorkers.Resource].sort()).toEqual(
       [...MAIL_WORKER_SERVICES]
         .sort()
-        .map((s) => `arn:aws:ecs:us-east-2:853377042897:service/dad-staging/${s}`),
+        .map((s) => `arn:aws:ecs:us-east-2:${config.account}:service/dad-staging/${s}`),
     );
     // No wildcard resource on IAM or ECS.
     for (const s of statements) {
@@ -78,9 +81,15 @@ describe('SMTP credential rotation', () => {
     expect(readers).toEqual([...MAIL_WORKER_SERVICES].sort());
   });
 
-  it('ships the function without its tests', () => {
-    const t = Template.fromStack(buildGraph('staging').ses);
+  it('ships the handler without the Python tests or bytecode caches', () => {
+    const { app, ses } = buildGraph('staging', {}, { 'aws:cdk:enable-asset-metadata': 'true' });
+    const t = Template.fromStack(ses);
     const fn = Object.values(t.findResources('AWS::Lambda::Function') as Record<string, Res>)[0];
+    const assetDir = path.join(app.outdir, (fn as any).Metadata['aws:asset:path']);
+    const staged = fs.readdirSync(assetDir);
+    expect(staged).toContain('index.py');
+    expect(staged).not.toContain('test_index.py');
+    expect(staged).not.toContain('__pycache__');
     expect(fn.Properties.Runtime).toBe('python3.12');
     expect(fn.Properties.Handler).toBe('index.handler');
     expect(fn.Properties.Environment.Variables.MAIL_SERVICES).toBe(MAIL_WORKER_SERVICES.join(','));
@@ -89,11 +98,11 @@ describe('SMTP credential rotation', () => {
   // The function's own unit tests (fake AWS clients), run here so CI runs them.
   it('passes the rotation function\'s Python unit tests', () => {
     const dir = path.join(__dirname, '..', 'lambda', 'smtp-rotation');
-    const out = execFileSync('python3', ['-m', 'unittest', 'test_index'], {
+    // execFileSync throws, with the unittest output, on a non-zero exit.
+    execFileSync('python3', ['-m', 'unittest', 'test_index'], {
       cwd: dir,
       encoding: 'utf8',
       stdio: ['ignore', 'pipe', 'pipe'],
     });
-    expect(out).toBe('');
-  });
+  }, 60_000);
 });

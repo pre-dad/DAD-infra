@@ -30,6 +30,15 @@ describe('getConfig — shared DAD account/region map', () => {
     expect(getConfig('STAGING').env).toBe('staging');
   });
 
+  test('trims and lowercases production', () => {
+    expect(getConfig(' Production ').env).toBe('production');
+  });
+
+  test('returned configs are frozen', () => {
+    expect(Object.isFrozen(getConfig('staging'))).toBe(true);
+    expect(Object.isFrozen(getConfig('production'))).toBe(true);
+  });
+
   test('throws on an unknown env with the exact message', () => {
     expect(() => getConfig('dev')).toThrow(
       "Unknown env 'dev'. Expected 'staging' or 'production' (default 'staging').",

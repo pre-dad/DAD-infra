@@ -11,8 +11,7 @@ DAD-infra uses repository **rulesets** (not classic branch protection) and prote
 
 Two active rulesets exist, `protect-main` (targets `refs/heads/main`) and `protect-dev`
 (targets `refs/heads/dev`). They are identical apart from name and target ref. Both are
-`enforcement: active`, and both also set `require_extra_approval_for_unattributed_changes`
-(on) and `strict_required_status_checks_policy` (on).
+`enforcement: active`, and both set `strict_required_status_checks_policy` (on).
 
 ## What is applied
 

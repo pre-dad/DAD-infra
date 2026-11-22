@@ -33,7 +33,7 @@ export class NetworkStack extends cdk.Stack {
   /** The dedicated VPC for this environment. */
   public readonly vpc: ec2.Vpc;
 
-  /** SG applied to the internet-facing NLB target ENIs path (nginx tier edge). */
+  /** SG for the internet-facing NLB (edge path in front of the nginx tier). */
   public readonly nlbSecurityGroup: ec2.SecurityGroup;
   /** SG for the nginx (edge ingress) service. */
   public readonly nginxSecurityGroup: ec2.SecurityGroup;
@@ -106,7 +106,6 @@ export class NetworkStack extends cdk.Stack {
     this.computeSubnets = { subnetGroupName: NetworkStack.COMPUTE_SUBNET };
     this.isolatedSubnets = { subnetGroupName: NetworkStack.ISOLATED_SUBNET };
 
-    // --- Security groups (one per tier) ---------------------------------
     this.nlbSecurityGroup = new ec2.SecurityGroup(this, 'NlbSg', {
       vpc: this.vpc,
       description: 'DAD NLB edge path (TCP 80/443 from Cloudflare ranges).',
@@ -143,7 +142,6 @@ export class NetworkStack extends cdk.Stack {
       allowAllOutbound: true,
     });
 
-    // --- SG chain (mirrors the Compose network isolation) ---------------
     // nginx accepts the edge ports from the NLB path only (8080 http, 8443 https).
     this.nginxSecurityGroup.addIngressRule(
       this.nlbSecurityGroup,
@@ -163,11 +161,18 @@ export class NetworkStack extends cdk.Stack {
       'web from nginx',
     );
 
-    // api accepts 8002 from web only (Service Connect web→api).
+    // Browser traffic reaches the API through the web proxy.
     this.apiSecurityGroup.addIngressRule(
       this.webSecurityGroup,
       ec2.Port.tcp(8002),
       'api from web',
+    );
+
+    // Native traffic bypasses the browser proxy but still enters through nginx.
+    this.apiSecurityGroup.addIngressRule(
+      this.nginxSecurityGroup,
+      ec2.Port.tcp(8002),
+      'native api from nginx',
     );
 
     // RDS Proxy accepts 5432 from api and workers only.
@@ -186,7 +191,6 @@ export class NetworkStack extends cdk.Stack {
     // the RDS instance to keep that bidirectional wiring in a single stack and
     // avoid a cross-stack dependency cycle.
 
-    // --- VPC endpoints --------------------------------------------------
     // Keep image pulls, secret resolution and log delivery for the compute tier on the
     // AWS network instead of the NAT gateway. The NAT stays for everything else
     // (Stripe, SMTP, APNs/FCM).
@@ -234,7 +238,6 @@ export class NetworkStack extends cdk.Stack {
       }
     }
 
-    // --- VPC flow logs --------------------------------------------------
     // Accepted and rejected traffic (rejected only where config.flowLogTrafficType says
     // so) to CloudWatch Logs with the configured retention.
     this.flowLogGroup = new logs.LogGroup(this, 'FlowLogs', {
@@ -249,7 +252,6 @@ export class NetworkStack extends cdk.Stack {
       trafficType: ec2.FlowLogTrafficType[config.flowLogTrafficType],
     });
 
-    // --- Outputs --------------------------------------------------------
     // Stable, human-named CfnOutputs consumed by the app pipeline
     // (.github/workflows/deploy.yml → the "names" step) to run the migrate /
     // provision-roles ECS run-tasks: the compute-tier subnet ids and the

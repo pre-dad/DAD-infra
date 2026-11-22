@@ -46,8 +46,9 @@ export const MAIL_WORKER_SERVICES = [
 ] as const satisfies readonly ServiceName[];
 
 /**
- * Map an env's logRetentionDays to the nearest supported CloudWatch
- * RetentionDays enum value. 30 → ONE_MONTH, 365 → ONE_YEAR.
+ * Map a retention in days to the matching CloudWatch RetentionDays enum value
+ * (30 → ONE_MONTH, 365 → ONE_YEAR). Throws for a count CloudWatch does not offer,
+ * so a config typo cannot silently shorten retention.
  */
 export function toRetentionDays(days: number): logs.RetentionDays {
   const supported: Array<[number, logs.RetentionDays]> = [
@@ -65,13 +66,11 @@ export function toRetentionDays(days: number): logs.RetentionDays {
     [365, logs.RetentionDays.ONE_YEAR],
     [731, logs.RetentionDays.TWO_YEARS],
   ];
-  let best = supported[0][1];
-  for (const [n, enumValue] of supported) {
-    if (n <= days) {
-      best = enumValue;
-    }
+  const match = supported.find(([n]) => n === days);
+  if (!match) {
+    throw new Error(`unsupported log retention: ${days} days`);
   }
-  return best;
+  return match[1];
 }
 
 /**

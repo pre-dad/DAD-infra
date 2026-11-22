@@ -23,8 +23,9 @@ export const RDS_CA_BUNDLE_URL =
  * Runs as the RDS master user, connecting directly to the instance (the master secret is
  * deliberately NOT registered with the RDS Proxy). Safe to re-run: the role is created
  * only if missing, its password is always reset to the value in `dad/<env>/db/owner`, and
- * the grant and ownership change are idempotent. Passwords are passed as psql variables
- * and quoted by `format(%L)`; they never appear in the command line.
+ * the grant and ownership change are idempotent. Passwords are read from the
+ * environment by psql (`\getenv`, psql 15+) and quoted by `format(%L)`; they never appear
+ * in the command line.
  *
  * `GRANT owner TO <master>` is required: a master that is not a superuser (RDS) may make a
  * role a database's owner only if it is a member of that role.
@@ -37,8 +38,8 @@ if [ "$PGSSLMODE" = verify-full ]; then
   export PGSSLROOTCERT=/tmp/rds-ca.pem
 fi
 export PGHOST="$DB_HOST" PGDATABASE="$DB_NAME" PGUSER="$MASTER_USER" PGPASSWORD="$MASTER_PASSWORD"
-psql -v ON_ERROR_STOP=1 -X -q \\
-  -v owner_pw="$OWNER_PASSWORD" -v master="$MASTER_USER" -v db="$DB_NAME" <<'SQL'
+psql -v ON_ERROR_STOP=1 -X -q -v master="$MASTER_USER" -v db="$DB_NAME" <<'SQL'
+\\getenv owner_pw OWNER_PASSWORD
 SELECT 'CREATE ROLE owner' WHERE NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'owner') \\gexec
 SELECT format('ALTER ROLE owner WITH LOGIN CREATEROLE PASSWORD %L', :'owner_pw') \\gexec
 GRANT owner TO :"master";

@@ -1,7 +1,7 @@
 /**
  * PostgreSQL connection-URL builder and the per-process login → env-var map.
  *
- * Confirmed from .env.database.example and docs/operations.md:
+ * Per .env.database.example and docs/operations.md:
  *   - Every process connects through the RDS Proxy (transaction-mode pooler)
  *     on port 5432, which requires `default_query_exec_mode=exec`.
  *   - TLS is enforced end-to-end with `sslmode=verify-full`.
@@ -13,12 +13,10 @@
  * canonical login↔env-var mapping that later stacks wire into task definitions.
  */
 
-/** Inputs needed to build one per-process database URL. */
+/** Inputs needed to build one per-process database URL (the password travels separately). */
 export interface DatabaseUrlParts {
   /** PostgreSQL role / login name (e.g. `dad_api_login`). */
   readonly login: string;
-  /** Role password (typically sourced from a Secrets Manager secret at deploy). */
-  readonly password: string;
   /** RDS Proxy endpoint host (no scheme, no port). */
   readonly proxyEndpoint: string;
   /** Database name (default `dad`). */
@@ -36,18 +34,8 @@ export const DB_URL_QUERY_STRING =
   '?default_query_exec_mode=exec&sslmode=verify-full';
 
 /**
- * Build a per-process PostgreSQL connection URL pointing at the RDS Proxy.
- *
- * Shape (confirmed):
- *   postgresql://<login>:<password>@<proxyEndpoint>:5432/<db>?default_query_exec_mode=exec&sslmode=verify-full
- */
-export function buildDatabaseUrl(parts: DatabaseUrlParts): string {
-  const { login, password, proxyEndpoint, db } = parts;
-  return `postgresql://${login}:${password}@${proxyEndpoint}:5432/${db}${DB_URL_QUERY_STRING}`;
-}
-
-/**
- * The same URL without a password: `postgresql://<login>@<proxyEndpoint>:5432/<db>?...`.
+ * A per-process PostgreSQL connection URL pointing at the RDS Proxy, without a password:
+ * `postgresql://<login>@<proxyEndpoint>:5432/<db>?...`.
  *
  * DAD-Main accepts this form together with `<PREFIX>_PASSWORD` (see
  * {@link passwordVariable}), so the password reaches the process as an ECS secret and
@@ -55,9 +43,7 @@ export function buildDatabaseUrl(parts: DatabaseUrlParts): string {
  * HOST/NAME/USER parts, keeps `default_query_exec_mode=exec`, which the RDS Proxy needs and
  * the parts form cannot express.
  */
-export function buildPasswordlessDatabaseUrl(
-  parts: Omit<DatabaseUrlParts, 'password'>,
-): string {
+export function buildPasswordlessDatabaseUrl(parts: DatabaseUrlParts): string {
   const { login, proxyEndpoint, db } = parts;
   return `postgresql://${login}@${proxyEndpoint}:5432/${db}${DB_URL_QUERY_STRING}`;
 }
@@ -86,7 +72,7 @@ export interface ProcessLogin {
  * map — see {@link OWNER_LOGIN}. The owner URL is used only by the migrate and
  * provision-roles maintenance tasks, never by a long-running service.
  */
-export const PROCESS_LOGINS: Record<string, ProcessLogin> = {
+export const PROCESS_LOGINS = {
   api: { login: 'dad_api_login', envVar: 'DONOR_API_DATABASE_URL' },
   'worker-stripe': {
     login: 'dad_worker_stripe_login',
@@ -122,7 +108,7 @@ export const PROCESS_LOGINS: Record<string, ProcessLogin> = {
     login: 'dad_reconcile_login',
     envVar: 'DONOR_RECONCILE_DATABASE_URL',
   },
-};
+} as const satisfies Record<string, ProcessLogin>;
 
 /**
  * The owner / bootstrap login. Used only by `migrate` and `provision-roles`

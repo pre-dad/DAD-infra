@@ -18,6 +18,8 @@ export const backupRoleName = (env: string): string => `dad-${env}-backup`;
 const vaultArn = (region: string, account: string, env: string): string =>
   `arn:aws:backup:${region}:${account}:backup-vault:${drVaultName(env)}`;
 
+const drKeyAlias = (env: string): string => `alias/dad-${env}-dr-backup`;
+
 /** Props for {@link DrBackupVaultStack}. */
 export interface DrBackupVaultStackProps extends cdk.StackProps {
   readonly config: EnvConfig;
@@ -36,7 +38,7 @@ export class DrBackupVaultStack extends cdk.Stack {
     const { config } = props;
 
     const key = new kms.Key(this, 'DrBackupKey', {
-      alias: `alias/dad-${config.env}-dr-backup`,
+      alias: drKeyAlias(config.env),
       description: `DAD ${config.env} cross-region database backup vault key.`,
       enableKeyRotation: true,
       removalPolicy: cdk.RemovalPolicy.RETAIN,
@@ -92,7 +94,8 @@ export class BackupStack extends cdk.Stack {
     );
 
     // Only AWS Backup may assume it. The AWS-managed backup service policy is the documented
-    // minimum for backing up and copying RDS (restores are done by an operator, not this role); the selection below limits it to one database.
+    // minimum for backing up and copying RDS (restores are done by an operator, not this
+    // role); the selection below limits it to one database.
     this.role = new iam.Role(this, 'Role', {
       roleName: backupRoleName(config.env),
       assumedBy: new iam.ServicePrincipal('backup.amazonaws.com'),
@@ -109,6 +112,9 @@ export class BackupStack extends cdk.Stack {
         sid: 'UseDestinationVaultKey',
         actions: ['kms:Encrypt', 'kms:GenerateDataKey*', 'kms:ReEncrypt*', 'kms:DescribeKey'],
         resources: [`arn:aws:kms:${destinationRegion}:${this.account}:key/*`],
+        // The key lives in another region's stack, so its ARN is not referenceable; the
+        // alias condition keeps the wildcard from reaching any other key.
+        conditions: { 'ForAnyValue:StringEquals': { 'kms:ResourceAliases': drKeyAlias(config.env) } },
       }),
     );
 

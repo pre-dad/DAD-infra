@@ -19,11 +19,23 @@ describe('SesStack', () => {
       PolicyDocument: {
         Statement: Match.arrayWith([
           Match.objectLike({
-            Action: Match.arrayWith(['ses:SendRawEmail']),
+            Action: 'ses:SendRawEmail',
+            Condition: { StringEquals: { 'ses:FromAddress': 'no-reply@mail.staging.dynamicaid.org' } },
           }),
         ]),
       },
     });
+  });
+
+  it('removes the rotation log group with the stack only when deletion protection is off', () => {
+    const policy = (env: 'staging' | 'production') =>
+      Object.values(
+        Template.fromStack(buildGraph(env).ses).findResources('AWS::Logs::LogGroup'),
+      ).map((g) => g.DeletionPolicy);
+    const staging = buildGraph('staging').config.deletionProtection;
+    const production = buildGraph('production').config.deletionProtection;
+    expect(policy('staging')).toEqual([staging ? 'Retain' : 'Delete']);
+    expect(policy('production')).toEqual([production ? 'Retain' : 'Delete']);
   });
 
   it('stores a DONOR_SMTP_* secret', () => {

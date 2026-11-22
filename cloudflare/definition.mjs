@@ -48,7 +48,7 @@ const STAFF_PREFIXES = ["/staff", "/api/donor/staff"];
 const TOO_MANY = JSON.stringify({ detail: "Too many requests" });
 
 /**
- * Per-IP edge limits, a little above the layer behind each (API per task, nginx per
+ * Per-IP edge limits, a little above the layer behind each (API shared database budget, nginx per
  * client). Free only offers a 10 second counting period, so its thresholds are the
  * per-minute figure divided by six.
  */
@@ -143,41 +143,58 @@ function rateLimitRule(name, description, expression, tier, action = "block") {
  */
 export function buildDefinition({ tier, hosts = {} }) {
   if (!TIERS.includes(tier)) throw new Error(`unknown tier "${tier}" (expected ${TIERS.join(", ")})`);
-  const { public: publicHosts = [], staff: staffHosts = [], website = [], atm = [] } = hosts;
-  if (publicHosts.length + staffHosts.length + website.length + atm.length === 0) {
+  const { public: publicHosts = [], staff: staffHosts = [], website = [], atm = [], native: nativeHosts = [] } = hosts;
+  if (publicHosts.length + staffHosts.length + website.length + atm.length + nativeHosts.length === 0) {
     throw new Error("no hosts given: set at least one of the EDGE_*_HOSTS variables");
   }
   const donorHosts = [...publicHosts, ...staffHosts];
+  if (nativeHosts.some((host) => donorHosts.includes(host) || website.includes(host) || atm.includes(host))) {
+    throw new Error("native API hosts must be separate from browser hosts");
+  }
+  const roles = { public: publicHosts, staff: staffHosts, website, atm, native: nativeHosts };
+  const seen = new Map();
+  for (const [role, list] of Object.entries(roles)) {
+    for (const host of list) {
+      if (seen.has(host) && seen.get(host) !== role) throw new Error(`host "${host}" is listed for both ${seen.get(host)} and ${role}`);
+      seen.set(host, role);
+    }
+  }
+  const nativeAuthPaths = AUTH_PATHS.filter((path) => !path.startsWith("/api/donor/staff/")).map((path) => path.slice(4));
+  const nativeVisitorPaths = VISITOR_PATHS.filter((path) => path !== "/api/donor/checkouts").map((path) => path.slice(4));
+  const scopedPaths = (browserHosts, browserPaths, nativePaths) => {
+    const alternatives = [];
+    if (browserHosts.length) alternatives.push(`(${and([hostClause(browserHosts, tier), pathMatch(browserPaths)])})`);
+    if (nativeHosts.length) alternatives.push(`(${and([hostClause(nativeHosts, tier), pathMatch(nativePaths)])})`);
+    return `(${alternatives.join(" or ")})`;
+  };
   const candidates = [];
 
-  if (donorHosts.length) {
+  if (donorHosts.length || nativeHosts.length) {
     candidates.push(
       rateLimitRule(
         "donor-auth",
         "Sign-in, claim and activation: per-IP brute-force cap above the API's 10/min",
         and([
-          hostClause(donorHosts, tier),
           methodClause("POST", tier),
-          pathMatch({
-            exact: AUTH_PATHS,
-            suffixPrefix: "/api/donor/oidc/",
-            suffix: "/sign-in",
-          }),
+          scopedPaths(donorHosts,
+            { exact: AUTH_PATHS, suffixPrefix: "/api/donor/oidc/", suffix: "/sign-in" },
+            { exact: nativeAuthPaths, suffixPrefix: "/donor/oidc/", suffix: "/sign-in" }),
           excluded(),
         ]),
         tier,
       ),
     );
   }
-  if (publicHosts.length) {
+  if (publicHosts.length || nativeHosts.length) {
     candidates.push(
       rateLimitRule(
         "donor-visitor",
         "Checkout, referral, company and partner application: per-IP cap above the API's 60/min",
         and([
-          hostClause(publicHosts, tier),
           methodClause("POST", tier),
-          pathMatch({ exact: VISITOR_PATHS, prefixes: VISITOR_PREFIXES }),
+          scopedPaths(publicHosts,
+            { exact: VISITOR_PATHS, prefixes: VISITOR_PREFIXES },
+            { exact: nativeVisitorPaths, prefixes: VISITOR_PREFIXES.map((path) => path.slice(4)) }),
           excluded(),
         ]),
         tier,
@@ -261,6 +278,17 @@ export function buildDefinition({ tier, hosts = {} }) {
     );
   }
 
+  if (nativeHosts.length) {
+    custom.push({
+      ref: `${REF_PREFIX}skip-native-bot-challenge`,
+      description: `${DESCRIPTION_PREFIX}Native API: skip interactive bot challenges, retain WAF and rate limits`,
+      expression: hostClause(nativeHosts, "pro"),
+      action: "skip",
+      action_parameters: { phases: ["http_request_sbfm"] },
+      logging: { enabled: true },
+      enabled: true,
+    });
+  }
   return {
     tier,
     phases: { [PHASE_RATE_LIMIT]: rateLimit, [PHASE_CUSTOM]: custom },

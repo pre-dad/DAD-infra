@@ -64,7 +64,7 @@ class FakeSecrets:
             if s not in self.stages.setdefault(ClientRequestToken, []):
                 self.stages[ClientRequestToken].append(s)
 
-    def update_secret_version_stage(self, SecretId, VersionStage, MoveToVersionId, RemoveFromVersionId):
+    def update_secret_version_stage(self, SecretId, VersionStage, MoveToVersionId, RemoveFromVersionId=None):
         if RemoveFromVersionId is not None:
             self.stages[RemoveFromVersionId].remove(VersionStage)
         self.stages[MoveToVersionId] = [VersionStage]
@@ -248,6 +248,24 @@ class RotationTest(unittest.TestCase):
         rotate(sm, FakeIam([]), ecs)  # must not raise
         self.assertEqual(sm.stages["v-new"], ["AWSCURRENT"])
         self.assertEqual(ecs.updated, [])
+
+    def test_a_retried_finish_after_promotion_still_restarts_the_workers(self):
+        sm = FakeSecrets({**BASE, "DONOR_SMTP_USERNAME": "", "DONOR_SMTP_PASSWORD": ""})
+        ecs = FakeEcs([{"serviceName": "login-email-worker", "status": "ACTIVE", "desiredCount": 1}])
+        rotate(sm, FakeIam([]), ecs)
+        ecs.updated.clear()
+        index.handler({"SecretId": "arn", "ClientRequestToken": "v-new", "Step": "finishSecret"},
+                      None, sm=sm, iam=FakeIam([]), ecs=ecs)
+        self.assertEqual(ecs.updated, [("dad-staging", "login-email-worker", True)])
+
+    def test_finish_without_a_current_version_omits_the_remove_argument(self):
+        sm = FakeSecrets({**BASE})
+        sm.stages = {}
+        sm.stage("v-new")
+        calls = []
+        sm.update_secret_version_stage = lambda **kw: calls.append(kw)
+        index._finish(sm, FakeEcs([]), "arn", "v-new", sm.stages)
+        self.assertEqual(calls, [{"SecretId": "arn", "VersionStage": "AWSCURRENT", "MoveToVersionId": "v-new"}])
 
     def test_refuses_when_rotation_is_disabled_or_the_version_is_not_pending(self):
         sm = FakeSecrets({**BASE}, rotation_enabled=False)

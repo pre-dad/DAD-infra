@@ -1,5 +1,6 @@
 import { Template, Match } from 'aws-cdk-lib/assertions';
 import { buildGraph } from './helpers';
+import { SERVICE_NAMES } from '../lib/ecs-cluster-stack';
 
 describe('ServicesStack', () => {
   it.each(['staging', 'production'] as const)(
@@ -31,9 +32,21 @@ describe('ServicesStack', () => {
     },
   );
 
-  it('creates exactly 9 ECS services', () => {
+  it.each([['staging', '768MiB'], ['production', '1536MiB']] as const)(
+    '%s: reserves memory headroom for API report rendering', (env, limit) => {
+      const t = Template.fromStack(buildGraph(env).services);
+      t.hasResourceProperties('AWS::ECS::TaskDefinition', {
+        ContainerDefinitions: Match.arrayWith([Match.objectLike({
+          PortMappings: Match.arrayWith([Match.objectLike({ ContainerPort: 8002 })]),
+          Environment: Match.arrayWith([{ Name: 'GOMEMLIMIT', Value: limit }]),
+        })]),
+      });
+    },
+  );
+
+  it('creates one ECS service per service name', () => {
     const t = Template.fromStack(buildGraph('staging').services);
-    t.resourceCountIs('AWS::ECS::Service', 9);
+    t.resourceCountIs('AWS::ECS::Service', SERVICE_NAMES.length);
   });
 
   it('defines the six worker commands as `worker --kind <kind>`', () => {
@@ -157,10 +170,10 @@ describe('ServicesStack', () => {
       }
     });
 
-    it('enables the deployment circuit breaker with rollback on all 9 services', () => {
+    it('enables the deployment circuit breaker with rollback on every service', () => {
       const t = Template.fromStack(buildGraph('staging').services);
       const services = t.findResources('AWS::ECS::Service');
-      expect(Object.keys(services)).toHaveLength(9);
+      expect(Object.keys(services)).toHaveLength(SERVICE_NAMES.length);
       for (const svc of Object.values(services)) {
         expect(svc.Properties.DeploymentConfiguration.DeploymentCircuitBreaker).toEqual({
           Enable: true,
@@ -301,8 +314,9 @@ describe('ServicesStack', () => {
         r.Properties.MaxCapacity,
       ]);
       expect(found).toHaveLength(3);
+      const fragment = { api: 'ApiService', web: 'WebService', nginx: 'NginxService' } as const;
       for (const [name, [min, max]] of Object.entries(bounds)) {
-        const hit = found.find((f) => String(f[0]).includes(`service/`) && String(f[0]).includes(name === 'api' ? 'ApiService' : name === 'web' ? 'WebService' : 'NginxService'));
+        const hit = found.find((f) => String(f[0]).includes(fragment[name as keyof typeof fragment]));
         expect(hit).toBeDefined();
         expect([hit![1], hit![2]]).toEqual([min, max]);
       }
@@ -379,6 +393,21 @@ describe('ServicesStack', () => {
           autoscaling: { ...base, web: { maxCount: 1, cpuTargetPercent: 60 } },
         }),
       ).toThrow(/maxCount \(1\) is below the desired count \(3\)/);
+    });
+  });
+
+  it.each(['staging', 'production'] as const)('%s configures the native API host on nginx', env => {
+    const t = Template.fromStack(buildGraph(env).services);
+    const origin = env === 'staging'
+      ? 'https://api.staging.dynamicaid.org'
+      : 'https://api.dynamicaid.org';
+    t.hasResourceProperties('AWS::ECS::TaskDefinition', {
+      Family: 'dad-nginx',
+      ContainerDefinitions: Match.arrayWith([
+        Match.objectLike({
+          Environment: Match.arrayWith([{ Name: 'DONOR_NATIVE_API_ORIGIN', Value: origin }]),
+        }),
+      ]),
     });
   });
 });

@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
-import { test } from "node:test";
-import { run } from "./apply.mjs";
+import { mock, test } from "node:test";
+import { parseArgs, run } from "./apply.mjs";
+import { fetchRules, mergeRules } from "./cloudflare.mjs";
 import {
   AUTH_PATHS,
   LIMITS,
@@ -78,10 +79,10 @@ test("edge limits sit above the app limits", () => {
     return (l.requests * 60) / l.period;
   };
   assert.ok(perMinute("donor-auth", "pro") > 10);
-  assert.ok(perMinute("donor-auth", "free") > 10 - 1);
+  assert.ok(perMinute("donor-auth", "free") > 9);
   assert.ok(perMinute("donor-visitor", "pro") > 60);
   assert.ok(perMinute("atm-ledger", "pro") >= 60);
-  assert.ok(perMinute("website-forms", "pro") > 10 / 60);
+  assert.ok(perMinute("website-forms", "pro") > 1 / 6);
 });
 
 test("rule budgets and periods stay within the plan", () => {
@@ -249,4 +250,104 @@ test("render needs no network or credential", async () => {
 test("API errors surface with the Cloudflare message", async () => {
   const fetchImpl = async () => ({ status: 403, json: async () => ({ success: false, errors: [{ code: 10000, message: "Authentication error" }] }) });
   await assert.rejects(run(["plan", "--tier", "pro"], { env: ENV, fetchImpl, out: () => {} }), /HTTP 403.*Authentication error/);
+});
+
+test("native API hosts share auth and visitor edge budgets without browser challenges", () => {
+  const native = "api.donors.example.org";
+  const definition = buildDefinition({ tier: "business", hosts: { ...HOSTS, native: [native] } });
+  const rates = definition.phases[PHASE_RATE_LIMIT];
+  const auth = rates.find(rule => rule.ref.endsWith("donor-auth"));
+  assert.ok(auth.expression.includes(`"${native}"`));
+  assert.ok(auth.expression.includes('"/donor/login"'));
+  const visitor = rates.find(rule => rule.ref.endsWith("donor-visitor"));
+  assert.ok(visitor.expression.includes(`"${native}"`));
+  assert.ok(visitor.expression.includes('"/donor/partner/applications"'));
+  assert.ok(!rates.find(rule => rule.ref.endsWith("donor-pages")).expression.includes(`"${native}"`));
+  const skip = definition.phases[PHASE_CUSTOM].find(rule => rule.ref.endsWith("skip-native-bot-challenge"));
+  assert.equal(skip.action, "skip");
+  assert.deepEqual(skip.action_parameters.phases, ["http_request_sbfm"]);
+  assert.equal(skip.action_parameters.ruleset, undefined);
+});
+
+test("a native-only zone gets its own bounded definition", () => {
+  const definition = buildDefinition({ tier: "pro", hosts: { native: ["api.example.org"] } });
+  assert.deepEqual(definition.phases[PHASE_RATE_LIMIT].map((r) => r.ref), [`${REF_PREFIX}donor-auth`, `${REF_PREFIX}donor-visitor`]);
+  for (const rule of definition.phases[PHASE_RATE_LIMIT]) {
+    assert.ok(rule.expression.includes('"api.example.org"'), rule.ref);
+  }
+  const [auth] = definition.phases[PHASE_RATE_LIMIT];
+  assert.ok(auth.expression.includes('"/donor/login"') && !auth.expression.includes('"/api/donor/login"'));
+  assert.ok(definition.phases[PHASE_CUSTOM].every((r) => !r.expression.includes("staff")));
+});
+
+test("native routing is explicit in environment configuration and cannot overlap browser hosts", async () => {
+  const { phases } = await run(["render", "--tier", "pro"], {
+    env: { EDGE_NATIVE_HOSTS: "api.example.org" },
+    fetchImpl: () => assert.fail("render must stay offline"),
+    out: () => {},
+  });
+  assert.ok(phases[PHASE_RATE_LIMIT].every(rule => rule.expression.includes('"api.example.org"')));
+  assert.throws(() => buildDefinition({ tier: "pro", hosts: { public: ["same.org"], native: ["same.org"] } }), /separate/);
+});
+
+test("a host cannot be listed under two roles", () => {
+  assert.throws(() => buildDefinition({ tier: "pro", hosts: { public: ["same.org"], staff: ["same.org"] } }), /"same.org" is listed for both public and staff/);
+  assert.throws(() => buildDefinition({ tier: "pro", hosts: { website: ["same.org"], atm: ["same.org"] } }), /both website and atm/);
+});
+
+test("parseArgs validates the tier and refuses a flag as an option value", () => {
+  assert.throws(() => parseArgs(["plan", "--tier", "gold"]), /unknown tier "gold"/);
+  assert.throws(() => parseArgs(["plan", "--tier", "--apply"]), /--tier needs a value/);
+  assert.throws(() => parseArgs(["plan", "--tier", "pro", "--disable", "--remove-all"]), /--disable needs a value/);
+  assert.throws(() => parseArgs(["plan", "--tier"]), /--tier needs a value/);
+  assert.deepEqual(parseArgs(["apply", "--tier", "pro", "--apply"]).tier, "pro");
+});
+
+test("--remove-all still validates the tier", async () => {
+  await assert.rejects(run(["plan", "--tier", "gold", "--remove-all"], { env: ENV, fetchImpl: () => assert.fail("no network"), out: () => {} }), /unknown tier/);
+});
+
+test("--disable naming a rule the tier does not define is an error and makes no request", async () => {
+  const { fetchImpl, calls } = mockApi({});
+  await assert.rejects(
+    run(["apply", "--apply", "--tier", "pro", "--disable", `${REF_PREFIX}typo`], { env: ENV, fetchImpl, out: () => {} }),
+    /--disable names no rule this tier defines: dad-edge-typo/,
+  );
+  assert.equal(calls.length, 0);
+});
+
+test("apply reads every phase before writing any", async () => {
+  const state = {};
+  const { fetchImpl, calls } = mockApi(state);
+  await run(["apply", "--apply", "--tier", "pro"], { env: ENV, fetchImpl, out: () => {} });
+  assert.deepEqual(calls.map((c) => c.method), ["GET", "GET", "PUT", "PUT"]);
+});
+
+test("mergeRules reports managed rules that are out of order or behind unmanaged ones", () => {
+  const rule = (ref) => ({ ref: `${REF_PREFIX}${ref}`, expression: "true", action: "block", enabled: true });
+  const desired = [rule("a"), rule("b")];
+  const owner = { ref: "owner-rule", expression: "true", action: "log", enabled: true };
+  const kinds = (current) => mergeRules({ current, desired }).changes.map((c) => c.kind);
+  assert.deepEqual(kinds([rule("a"), rule("b"), owner]), ["unchanged", "unchanged"]);
+  assert.deepEqual(kinds([rule("b"), rule("a"), owner]), ["unchanged", "unchanged", "reorder"]);
+  assert.deepEqual(kinds([owner, rule("a"), rule("b")]), ["unchanged", "unchanged", "reorder"]);
+});
+
+test("a request that outlives the timeout fails with a readable error", async () => {
+  const seen = [];
+  const hanging = (url, init) => {
+    seen.push(init.signal);
+    return new Promise((_, reject) => {
+      if (init.signal.aborted) return reject(init.signal.reason);
+      init.signal.addEventListener("abort", () => reject(init.signal.reason));
+    });
+  };
+  const timeout = mock.method(AbortSignal, "timeout", () => AbortSignal.abort(new DOMException("timed out", "TimeoutError")));
+  try {
+    await assert.rejects(fetchRules({ fetchImpl: hanging, credential: "x", zoneId: "z", phase: PHASE_RATE_LIMIT }), /timed out after 30s/);
+    assert.equal(timeout.mock.calls[0].arguments[0], 30_000);
+    assert.ok(seen[0] instanceof AbortSignal);
+  } finally {
+    timeout.mock.restore();
+  }
 });

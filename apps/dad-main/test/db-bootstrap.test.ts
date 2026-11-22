@@ -12,8 +12,8 @@ describe('database owner bootstrap', () => {
   // only by the one-off bootstrap task, never through the proxy every app process uses.
   it('does not register the master secret with the RDS Proxy', () => {
     const t = Template.fromStack(buildGraph('staging').data);
-    const masterId = ids(t, 'AWS::SecretsManager::Secret').find(
-      (id) => !id.startsWith('LoginSecret'),
+    const masterId = ids(t, 'AWS::SecretsManager::Secret').find((id) =>
+      id.startsWith('MasterSecret'),
     );
     expect(masterId).toBeDefined();
     const proxy = Object.values(t.findResources('AWS::RDS::DBProxy') as Record<string, Res>)[0];
@@ -95,8 +95,9 @@ describe('database owner bootstrap', () => {
       expect(OWNER_BOOTSTRAP_SCRIPT).toContain('export PGSSLROOTCERT=/tmp/rds-ca.pem');
     });
 
-    it('passes passwords as psql variables, never on the command line or in SQL text', () => {
-      expect(OWNER_BOOTSTRAP_SCRIPT).toContain('-v owner_pw="$OWNER_PASSWORD"');
+    it('reads passwords from the environment, never the command line or SQL text', () => {
+      expect(OWNER_BOOTSTRAP_SCRIPT).toContain('\\getenv owner_pw OWNER_PASSWORD');
+      expect(OWNER_BOOTSTRAP_SCRIPT).not.toMatch(/-v owner_pw/);
       expect(OWNER_BOOTSTRAP_SCRIPT).toContain("PASSWORD %L', :'owner_pw'");
       // The quoted heredoc keeps the shell from expanding anything inside the SQL.
       expect(OWNER_BOOTSTRAP_SCRIPT).toContain("<<'SQL'");

@@ -4,7 +4,7 @@ import { getAtmConfig } from '../lib/atm-config';
 import { EvidenceStack } from '../lib/evidence-stack';
 import { LedgerStack } from '../lib/ledger-stack';
 import { SecretsStack } from '../lib/secrets-stack';
-import { RunnerStack } from '../lib/runner-stack';
+import { RunnerStack, logRetention } from '../lib/runner-stack';
 
 function build(env: 'staging' | 'production'): Template {
   const app = new cdk.App();
@@ -77,17 +77,48 @@ describe('RunnerStack', () => {
     }
   });
 
+  const statement = (template: Template, sid: string) =>
+    Object.values(template.findResources('AWS::IAM::Policy'))
+      .flatMap((p) => p.Properties.PolicyDocument.Statement as Array<Record<string, unknown>>)
+      .find((s) => s.Sid === sid);
+
   test('role is scoped to the findings table and its by-status GSI', () => {
     const template = build('staging');
-    template.hasResourceProperties('AWS::IAM::Policy', {
-      PolicyDocument: {
-        Statement: Match.arrayWith([
-          Match.objectLike({
-            Sid: 'FindingsLedger',
-            Action: Match.arrayWith(['dynamodb:Query', 'dynamodb:UpdateItem']),
-          }),
+    const ledger = statement(template, 'FindingsLedger');
+    expect(ledger?.Action).toEqual(expect.arrayContaining(['dynamodb:Query', 'dynamodb:UpdateItem']));
+    const resources = JSON.stringify(ledger?.Resource);
+    expect(resources).toContain('FindingsTable');
+    expect(resources).toContain('/index/by-status');
+    expect(ledger?.Resource).toHaveLength(2);
+  });
+
+  test('role reaches only the evidence bucket and the two provider secrets, with no managed policies', () => {
+    const template = build('staging');
+    expect(JSON.stringify(statement(template, 'EvidenceObjects')?.Resource)).toContain('/*');
+    expect(statement(template, 'EvidenceBucket')?.Resource).toBeDefined();
+    expect(statement(template, 'ReadProviderSecrets')?.Resource).toHaveLength(2);
+    const role = Object.values(template.findResources('AWS::IAM::Role'))[0];
+    expect(role.Properties.ManagedPolicyArns).toBeUndefined();
+  });
+
+  test('the GitHub credential placeholder is empty', () => {
+    build('staging').hasResourceProperties('AWS::CodeBuild::Project', {
+      Environment: Match.objectLike({
+        EnvironmentVariables: Match.arrayWith([
+          Match.objectLike({ Name: 'GITHUB_APP_TOKEN', Type: 'PLAINTEXT', Value: '' }),
         ]),
-      },
+      }),
     });
+  });
+
+  test('production retains the log group; staging deletes it', () => {
+    const prod = build('production').findResources('AWS::Logs::LogGroup');
+    expect(Object.values(prod)[0].DeletionPolicy).toBe('Retain');
+    const staging = build('staging').findResources('AWS::Logs::LogGroup');
+    expect(Object.values(staging)[0].DeletionPolicy).toBe('Delete');
+  });
+
+  test('an unsupported retention is refused instead of silently shortened', () => {
+    expect(() => logRetention(45)).toThrow(/unsupported logRetentionDays: 45/);
   });
 });

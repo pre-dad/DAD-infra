@@ -1,12 +1,9 @@
 /**
  * Shared GitHub Actions OIDC pipeline primitives for the DAD estate.
  *
- * A GitHub Actions OIDC provider is an account-level singleton. This package
- * owns the provider construct once so that if two apps (dad-main, atm) were to
- * create their own in separate stacks they would not collide. Each app
- * contributes its own scoped deploy roles via {@link scopedDeployRole}.
- *
- * Extracted from DAD-Main/infra/lib/pipeline-iam-stack.ts.
+ * A GitHub Actions OIDC provider is an account-level singleton, so it is owned
+ * here once. Each app contributes its own scoped deploy roles via
+ * {@link scopedDeployRole}.
  */
 import { Duration } from 'aws-cdk-lib';
 import { Construct } from 'constructs';
@@ -48,6 +45,9 @@ export class GitHubOidcProvider extends Construct {
   }
 }
 
+/** GitHub Environment names, matching the CDK env names. */
+export type DeployEnv = 'staging' | 'production';
+
 /**
  * The `sub` claim GitHub issues to a job that runs under a GitHub Environment:
  * `repo:<owner>/<repo>:environment:<name>`.
@@ -59,7 +59,7 @@ export class GitHubOidcProvider extends Construct {
  */
 export function githubEnvironmentSubject(
   repo: string,
-  env: 'staging' | 'production',
+  env: DeployEnv,
 ): string {
   return `repo:${repo}:environment:${env}`;
 }
@@ -76,7 +76,7 @@ export function githubEnvironmentSubject(
 export function githubEnvironmentPrincipal(
   provider: iam.IOpenIdConnectProvider,
   repo: string,
-  env: 'staging' | 'production',
+  env: DeployEnv,
 ): iam.OpenIdConnectPrincipal {
   return new iam.OpenIdConnectPrincipal(provider, {
     StringEquals: {
@@ -93,7 +93,7 @@ export interface ScopedDeployRoleProps {
   /** GitHub `owner/repo` slug the role trusts. */
   readonly repo: string;
   /** Environment governing the trusted subject claims. */
-  readonly env: 'staging' | 'production';
+  readonly env: DeployEnv;
   /** Explicit IAM role name. */
   readonly roleName: string;
   /** Human-readable role description. */

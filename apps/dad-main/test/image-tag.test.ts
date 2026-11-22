@@ -49,12 +49,13 @@ describe('image tag from SSM', () => {
           // it is pinned by digest instead (db-bootstrap.test.ts).
           if (def.Properties.Family === 'dad-maint-bootstrap-owner') continue;
           for (const container of def.Properties.ContainerDefinitions) {
-            const image = JSON.stringify(container.Image);
-            expect([def.Properties.Family, image.includes(`":",{"Ref":"${paramId}"}`)]).toEqual([
+            // Image is { Fn::Join: ['', [<repository uri>..., ':', { Ref: <tag parameter> }]] }.
+            const parts: unknown[] = container.Image['Fn::Join'][1];
+            expect([def.Properties.Family, parts.slice(-2)]).toEqual([
               def.Properties.Family,
-              true,
+              [':', { Ref: paramId }],
             ]);
-            expect(image).not.toContain('latest');
+            expect(JSON.stringify(container.Image)).not.toContain('latest');
           }
         }
       },

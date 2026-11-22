@@ -14,6 +14,15 @@ function synth(env: 'staging' | 'production'): Template {
 }
 
 describe('LedgerStack', () => {
+  test('production retains the table; staging deletes it', () => {
+    expect(
+      Object.values(synth('production').findResources('AWS::DynamoDB::Table'))[0].DeletionPolicy,
+    ).toBe('Retain');
+    expect(
+      Object.values(synth('staging').findResources('AWS::DynamoDB::Table'))[0].DeletionPolicy,
+    ).toBe('Delete');
+  });
+
   test('key schema uses source (PK) + finding (SK), on-demand, PITR + SSE', () => {
     const template = synth('staging');
     template.hasResourceProperties('AWS::DynamoDB::Table', {

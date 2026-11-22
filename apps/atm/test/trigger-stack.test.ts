@@ -10,6 +10,7 @@ import { TriggerStack } from '../lib/trigger-stack';
 function build(env: 'staging' | 'production'): {
   stacks: Record<string, cdk.Stack>;
   trigger: Template;
+  runner: Template;
 } {
   const app = new cdk.App();
   const config = getAtmConfig(env);
@@ -38,21 +39,31 @@ function build(env: 'staging' | 'production'): {
   return {
     stacks: { evidence, ledger, secrets, runner, trigger },
     trigger: Template.fromStack(trigger),
+    runner: Template.fromStack(runner),
   };
 }
 
 describe('TriggerStack', () => {
   test('the scheduler target is the runner project', () => {
+    for (const env of ['staging', 'production'] as const) {
+      const { trigger, runner } = build(env);
+      const [schedule] = Object.values(trigger.findResources('AWS::Scheduler::Schedule'));
+      const imported = schedule.Properties.Target.Arn['Fn::ImportValue'] as string;
+      const projectArn = Object.values(runner.findOutputs('*')).find(
+        (o) => o.Export?.Name === imported,
+      );
+      expect(projectArn).toBeDefined();
+      expect(JSON.stringify(projectArn?.Value)).toContain('RunnerProject');
+      expect(schedule.Properties.Name).toBe(`atm-nightly-${env}`);
+    }
+  });
+
+  test('a failing start is retried twice within an hour, not for a day', () => {
     const { trigger } = build('staging');
     trigger.hasResourceProperties('AWS::Scheduler::Schedule', {
       Target: Match.objectLike({
-        Arn: {
-          'Fn::ImportValue': Match.anyValue(),
-        },
+        RetryPolicy: { MaximumRetryAttempts: 2, MaximumEventAgeInSeconds: 3600 },
       }),
-    });
-    trigger.hasResourceProperties('AWS::Scheduler::Schedule', {
-      Name: 'atm-nightly-staging',
     });
   });
 
