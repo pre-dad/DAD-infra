@@ -11,7 +11,7 @@
   "dependencies": {
     "@dad-infra/config": "0.1.0",
     "@dad-infra/pipeline-iam": "0.1.0",
-    "aws-cdk-lib": "2.275.0",
+    "aws-cdk-lib": "2.278.0",
     "constructs": "10.8.1"
   },
   "devDependencies": {
