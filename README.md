@@ -162,14 +162,11 @@ These settings are source configuration until the owner deploys them.
 
 ## Dependency security
 
-`npm ci` installs two reproducible security replacements until upstream incorporates
-the fixes. Jest's `deepmerge` is overridden by the small MIT-licensed hardened copy
-in `vendor/deepmerge` (GHSA-gcqx-w48m-w2h4). CDK bundles `minimatch` 10.2.6, which
-npm overrides cannot replace, so the checked-in postinstall script links CDK to
-the pinned patched 11.0.1 dependency (GHSA-g3hv-75wg-m249). The script fails if the
-expected package versions change. Do not use `--ignore-scripts` for this project.
+`npm ci` installs one reproducible security replacement until upstream incorporates
+the fix. Jest's `deepmerge` is overridden by the small MIT-licensed hardened copy
+in `vendor/deepmerge` (GHSA-gcqx-w48m-w2h4).
 
 Run `npm run test:security` after installation; CI runs it before CDK tests and
-synthesis. Registry/Dependabot scans may still flag CDK's original bundled version
-in its published metadata; that alert remains open until upstream ships a fixed
-bundle. The regression check verifies the version CDK actually loads.
+synthesis. It also checks that the `minimatch` CDK bundles is at least 11.0.9, which
+fixes GHSA-g3hv-75wg-m249 and GHSA-cf2h-pxjq-68xw. CDK 2.278.0 bundles 11.0.9, so the
+earlier postinstall link to a separately pinned patched copy is no longer needed.
