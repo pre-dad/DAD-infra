@@ -62,14 +62,10 @@ export class NetworkStack extends cdk.Stack {
   private static readonly COMPUTE_SUBNET = 'compute';
   private static readonly ISOLATED_SUBNET = 'data';
 
-  /**
-   * Pin the AZs to the two canonical us-east-2 zones. A VPC with maxAzs in a
-   * concrete environment would otherwise trigger a context lookup (an AWS call)
-   * that breaks offline synth; returning fixed AZs keeps `cdk synth` fully
-   * offline while still giving two-AZ coverage in us-east-2.
-   */
+  private placementZones: string[];
+
   public get availabilityZones(): string[] {
-    return ['us-east-2a', 'us-east-2b'];
+    return this.placementZones;
   }
 
   constructor(scope: Construct, id: string, props: NetworkStackProps) {
@@ -77,10 +73,25 @@ export class NetworkStack extends cdk.Stack {
 
     const { config } = props;
 
+    // Explicit deployment inputs avoid account lookups during synth and keep an
+    // existing VPC's placement stable when a region's available-zone list changes.
+    const zones = [1, 2].map((index) => new cdk.CfnParameter(this, `AvailabilityZone${index}`, {
+      type: 'AWS::EC2::AvailabilityZone::Name',
+      default: `${config.region}${index === 1 ? 'a' : 'b'}`,
+      description: `Placement zone ${index}. Preserve its existing value when updating this VPC.`,
+    }).valueAsString);
+    this.placementZones = zones;
+    new cdk.CfnRule(this, 'DistinctAvailabilityZones', {
+      assertions: [{
+        assert: cdk.Fn.conditionNot(cdk.Fn.conditionEquals(zones[0], zones[1])),
+        assertDescription: 'The VPC needs two distinct availability zones.',
+      }],
+    });
+
     // Dedicated VPC, 2 AZs. NAT gateways give the private-with-egress tier
     // outbound reachability for Stripe/SES/APNs/FCM and ECR image pulls.
     this.vpc = new ec2.Vpc(this, 'Vpc', {
-      maxAzs: 2,
+      availabilityZones: zones,
       natGateways: config.multiAz ? 2 : 1,
       ipAddresses: ec2.IpAddresses.cidr('10.0.0.0/16'),
       subnetConfiguration: [
