@@ -65,6 +65,20 @@ they exist only where `containerInsights` is on; staging keeps the database alar
 Staging is single-AZ for the database and has one NAT gateway, so an AZ outage takes it
 down; production is Multi-AZ for the database and has a NAT per AZ.
 
+### Network placement
+
+The network stack takes two CloudFormation parameters, `AvailabilityZone1` and
+`AvailabilityZone2`, of type `AWS::EC2::AvailabilityZone::Name`. They must differ.
+Each zone holds one subnet in each tier. Defaults remain `us-east-2a` and
+`us-east-2b`, preserving the previous placement without an account lookup during synth.
+
+For an existing stack, retain those values and inspect the CloudFormation change set
+before deployment: require that no subnet is replaced. Resource logical IDs and CIDRs
+are unchanged by parameterizing the zones. Changing a parameter to another zone is a
+network migration that can replace subnets and affect the database and services; it is
+not a routine configuration update. Do not select the first two results of a dynamic
+zone lookup, since changes to the account's available zones could move existing subnets.
+
 ### Scaling path
 
 The first constraint is the database, not the web tier: every api task and worker shares

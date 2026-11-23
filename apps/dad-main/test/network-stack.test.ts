@@ -14,6 +14,23 @@ function synth(env: 'staging' | 'production', overrides: Partial<EnvConfig> = {}
 }
 
 describe('NetworkStack', () => {
+  it('takes two distinct placement zones at deployment and preserves the existing defaults', () => {
+    const t = synth('production');
+    for (const [index, zone] of [[1, 'us-east-2a'], [2, 'us-east-2b']] as const) {
+      t.hasParameter(`AvailabilityZone${index}`, {
+        Type: 'AWS::EC2::AvailabilityZone::Name',
+        Default: zone,
+      });
+      const subnets = Object.values(t.findResources('AWS::EC2::Subnet')).filter(
+        r => r.Properties.AvailabilityZone?.Ref === `AvailabilityZone${index}`,
+      );
+      expect(subnets).toHaveLength(3);
+    }
+    expect(t.toJSON().Rules.DistinctAvailabilityZones.Assertions[0].Assert).toEqual({
+      'Fn::Not': [{ 'Fn::Equals': [{ Ref: 'AvailabilityZone1' }, { Ref: 'AvailabilityZone2' }] }],
+    });
+  });
+
   it('creates a VPC with three subnet tiers across 2 AZs', () => {
     const t = synth('staging');
     t.resourceCountIs('AWS::EC2::VPC', 1);

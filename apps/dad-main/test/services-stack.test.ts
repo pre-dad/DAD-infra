@@ -181,6 +181,16 @@ describe('ServicesStack', () => {
         });
       }
     });
+
+    it.each(['staging', 'production'] as const)('%s: keeps the serving floor during rollouts', (env) => {
+      const t = Template.fromStack(buildGraph(env).services);
+      const services = Object.values(t.findResources('AWS::ECS::Service'));
+      expect(services).toHaveLength(SERVICE_NAMES.length);
+      for (const service of services) {
+        expect(service.Properties.DeploymentConfiguration.MinimumHealthyPercent).toBe(100);
+        expect(service.Properties.DeploymentConfiguration.MaximumPercent).toBe(200);
+      }
+    });
   });
 
   // config.workersEnabled is the ONE worker switch: it sets the desired count, and
