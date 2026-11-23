@@ -153,7 +153,12 @@ export class ServicesStack extends cdk.Stack {
     // their health check) is stopped and rolled back to the last good task definition.
     // DAD-Main's deploy.yml then sees the new deployment end as FAILED rather than
     // COMPLETED, which is its deploy gate (no shell into running tasks needed).
-    const rollout = { circuitBreaker: { rollback: true } };
+    const rollout = {
+      circuitBreaker: { rollback: true },
+      // Start replacements before retiring healthy tasks, including the single-task staging services.
+      minHealthyPercent: 100,
+      maxHealthyPercent: 200,
+    };
 
     // Each process gets a password-less URL in its environment and the login secret's
     // password as an ECS secret (<PREFIX>_PASSWORD), which DAD-Main combines at start.
