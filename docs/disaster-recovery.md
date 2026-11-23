@@ -51,9 +51,14 @@ the last copied snapshot.
 1. AWS Backup in **us-west-2**, Vaults, `dad-production-dr-vault`, choose the newest
    recovery point, Restore. Pick a subnet group and security group in a VPC in us-west-2
    (create a VPC there first; the production network stack is us-east-2 only).
-2. Deploy a minimal copy of the stack in us-west-2 (`CDK_DEFAULT_REGION=us-west-2`) or
-   point a temporary service at the restored instance, update Cloudflare to the new
-   origin, and verify.
+2. Stand up isolated recovery compute in us-west-2 and connect it to the restored
+   instance. The application stacks are configured for us-east-2 and `resolveTarget`
+   rejects another region: setting `CDK_DEFAULT_REGION=us-west-2` does not relocate
+   them. A full regional recovery needs an explicitly reviewed regional configuration,
+   including network placement, proxy, ECS, SES, secrets and ingress. Only the DR vault
+   is already deployed in us-west-2. Recover the secrets from their system of record,
+   disable outbound Stripe, email and push while validating, then verify database
+   roles, schema, health and authenticated reads before switching Cloudflare's origin.
 3. Restore in-region protections (Multi-AZ, backups) before resuming normal operation.
 
 The backup role is deliberately backup-only (`allowRestores: false`); restores run under an
